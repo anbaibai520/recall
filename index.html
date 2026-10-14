@@ -238,7 +238,7 @@ const APP_VERSION = "1.1.0";
 const UI_CACHE_KEY = "recall-ui-cache";
 const UI_IGNORED_KEY = "ui-ignored-version";
 const UI_MAX_CACHE_CHARS = 1200000;   // 超过就别缓存了：部分 WebView 的 localStorage 只有 5MB
-const DEFAULT_UPDATE_MANIFEST = "";   // 例：https://<你的用户名>.github.io/recall/version.json
+const DEFAULT_UPDATE_MANIFEST = "https://anbaibai520.github.io/recall/version.json";   // 线上软更新清单（GitHub Pages）
 
 /* ---------- 0. 基础工具 ---------- */
 const $ = (id) => document.getElementById(id);
@@ -470,6 +470,11 @@ async function loadAll() {
   const st = await DB.kv.get("settings", null);
   if (st) S.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), st);
   if (!S.settings.glossMatrix) S.settings.glossMatrix = JSON.parse(JSON.stringify(DEFAULT_GLOSS_MATRIX));
+  // 更新源：首次运行写入默认值，之后用户清空就是「真的关闭」，不再回落默认
+  if (typeof S.settings.uiManifestUrl === "undefined") {
+    S.settings.uiManifestUrl = DEFAULT_UPDATE_MANIFEST;
+    await DB.kv.set("settings", S.settings);
+  }
   document.documentElement.style.setProperty("--fs", String(S.settings.fontScale || 1));
   FSRS.w = (S.settings.fsrsParams && S.settings.fsrsParams.length === 19) ? S.settings.fsrsParams.slice() : FSRS.w.slice();
   FSRS.fuzz = !!S.settings.fsrsFuzz;
@@ -1333,7 +1338,7 @@ function verNewer(a, b) {
   for (let i = 0; i < 3; i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) > (B[i] || 0); }
   return false;
 }
-function uiManifestUrl() { return String((settings().uiManifestUrl || DEFAULT_UPDATE_MANIFEST) || "").trim(); }
+function uiManifestUrl() { return String(settings().uiManifestUrl || "").trim(); }
 function readUiCache() { try { return JSON.parse(localStorage.getItem(UI_CACHE_KEY) || "null"); } catch (e) { return null; } }
 function clearUiCache() { try { localStorage.removeItem(UI_CACHE_KEY); localStorage.removeItem(UI_IGNORED_KEY); } catch (e) { } }
 async function httpGetText(url, ms) {
