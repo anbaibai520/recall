@@ -1386,7 +1386,14 @@ async function checkUiUpdate(opts) {
     if (localStorage.getItem(UI_IGNORED_KEY) === ver && !(opts && opts.force)) return { status: "ignored", version: ver };
     const indexUrl = joinUrl(url, man.index || "index.html");
     const html = await httpGetText(bust(indexUrl), 15000);
-    if (!/<script[\s>]/i.test(html)) throw new Error("拉到的不是页面（缺少 script）");
+    // 完整性校验：静态托管偶尔会返回「重建到一半」的半成品页面，
+    // 只看有没有 <script> 拦不住——那会让下次启动加载一个坏界面。
+    const vMain = (html.match(/const APP_VERSION = "([^"]+)"/) || [])[1];
+    const vBoot = (html.match(/var BUILTIN = "([^"]+)"/) || [])[1];
+    if (!vMain) throw new Error("拉到的不是完整页面（缺少版本常量）");
+    if (vMain !== ver) throw new Error("页面版本 " + vMain + " 与清单 " + ver + " 不一致，拒绝缓存");
+    if (vBoot !== vMain) throw new Error("页面内引导脚本与主脚本版本不一致，拒绝缓存");
+    if (html.length < 20000) throw new Error("页面只有 " + html.length + " 字节，疑似被截断");
     if (html.length > UI_MAX_CACHE_CHARS) return { status: "too-big", version: ver, note: note, size: html.length };
     try { localStorage.setItem(UI_CACHE_KEY, JSON.stringify({ version: ver, note: note, html: html, ts: now() })); }
     catch (e) { return { status: "cache-fail", version: ver, note: note }; }
