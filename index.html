@@ -1,0 +1,2410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#ffffff" />
+<title>Recall · 提取式单词记忆</title>
+<script>
+/* ==========================================================================
+   启动引导（必须排在主脚本之前）
+   作用：APK 内置的是某个固定版本的页面，本函数负责在「本地缓存里存在更新的 UI」
+   时用缓存重建整个文档 —— 于是换 UI 不需要重装 APK。
+   前提：清缓存后回落内置页；数据在 IndexedDB，与本引导无关，UI 更新不会动数据。
+   注意：BUILTIN 必须与主脚本里的 APP_VERSION 保持一致（smoke.mjs 有断言守着）。
+   ========================================================================== */
+(function () {
+  var BUILTIN = "1.1.0";
+  var CACHE_KEY = "recall-ui-cache";
+  function parts(v) { return String(v || "0").split(".").map(function (x) { return parseInt(x, 10) || 0; }); }
+  function newer(a, b) {
+    var A = parts(a), B = parts(b);
+    for (var i = 0; i < 3; i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) > (B[i] || 0); }
+    return false;
+  }
+  try {
+    var c = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    if (c && c.html && c.version && newer(c.version, BUILTIN)) {
+      document.open(); document.write(c.html); document.close();
+    }
+  } catch (e) { /* 缓存损坏就当没有 */ }
+})();
+</script>
+<style>
+:root{
+  --bg:#f5f6f8; --surface:#ffffff; --surface2:#fafbfc; --border:#e2e6ec; --border2:#cfd6df;
+  --text:#161a20; --muted:#6b7480; --muted2:#8b95a3;
+  --accent:#2563eb; --accent-weak:#eaf1ff; --accent-line:#bcd3ff;
+  --ok:#15803d; --ok-weak:#e8f6ec;
+  --warn:#a16207; --warn-weak:#fdf5e3;
+  --bad:#b3261e; --bad-weak:#fdecea;
+  --purple:#6d28d9; --purple-weak:#f2ecff;
+  --radius:14px; --radius-sm:10px;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 4px 14px rgba(16,24,40,.05);
+  --font: -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --fs:1;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--font);
+  font-size:calc(15px * var(--fs)); line-height:1.6;
+  -webkit-font-smoothing:antialiased; padding-bottom:env(safe-area-inset-bottom);
+}
+button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+.app{max-width:760px;margin:0 auto;padding:0 14px 96px}
+.topbar{position:sticky;top:0;z-index:30;background:rgba(245,246,248,.92);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--border);padding:10px 0 8px;margin-bottom:14px}
+.topbar-row{display:flex;align-items:center;gap:10px}
+.brand{display:flex;align-items:baseline;gap:8px;min-width:0}
+.brand h1{font-size:17px;margin:0;letter-spacing:.02em;font-weight:650}
+.brand .sub{font-size:11.5px;color:var(--muted2);white-space:nowrap}
+.spacer{flex:1}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;border:1px solid var(--border2);
+  background:var(--surface);font-size:12px;color:var(--muted);white-space:nowrap}
+.chip strong{color:var(--text);font-weight:600}
+.chip.accent{border-color:var(--accent-line);background:var(--accent-weak);color:#1e40af}
+.btn{border:1px solid var(--border2);background:var(--surface);border-radius:var(--radius-sm);
+  padding:8px 13px;font-size:14px;font-weight:520;color:var(--text);transition:.12s}
+.btn:hover{border-color:#a9b4c2;background:#fff}
+.btn:active{transform:translateY(1px)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:#1d4fd8}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:#e9edf2}
+.btn.block{width:100%;justify-content:center}
+.btn.lg{padding:12px 16px;font-size:15px;border-radius:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{padding:5px 9px;font-size:12.5px;border-radius:8px}
+.iconbtn{border:1px solid var(--border2);background:var(--surface);border-radius:9px;width:34px;height:34px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.sec{margin-bottom:16px}
+.sec-title{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:650;color:var(--muted);
+  letter-spacing:.04em;margin:0 2px 8px}
+.sec-title .hint{font-weight:400;color:var(--muted2);letter-spacing:0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media(max-width:560px){.grid3,.grid4{grid-template-columns:1fr 1fr}}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:11px 12px}
+.stat .v{font-size:21px;font-weight:680;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.stat .k{font-size:11.5px;color:var(--muted);margin-top:1px}
+.stat .n{font-size:11px;color:var(--muted2);margin-top:3px}
+.row{display:flex;align-items:center;gap:10px}
+.row.wrap{flex-wrap:wrap}
+.muted{color:var(--muted)}
+.small{font-size:12.5px}
+.tiny{font-size:11.5px}
+.empty{padding:34px 18px;text-align:center;color:var(--muted2);font-size:13.5px}
+.bar{height:7px;border-radius:99px;background:#e9edf2;overflow:hidden}
+.bar>i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+input[type=text],input[type=number],input[type=time],select,textarea{
+  border:1px solid var(--border2);background:#fff;border-radius:9px;padding:8px 10px;width:100%;
+  outline:none;transition:.12s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-weak)}
+label.fld{display:block;font-size:12.5px;color:var(--muted);margin-bottom:4px}
+.fld-row{margin-bottom:12px}
+/* bottom nav */
+.nav{position:fixed;bottom:0;left:0;right:0;z-index:40;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);
+  border-top:1px solid var(--border);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+.nav button{flex:1;border:0;background:transparent;padding:9px 4px 8px;display:flex;flex-direction:column;
+  align-items:center;gap:2px;font-size:11px;color:var(--muted2)}
+.nav button.on{color:var(--accent)}
+.nav button .ic{font-size:17px;line-height:1}
+/* study */
+.study-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.window-bar{height:4px;background:#e9edf2;border-radius:99px;overflow:hidden;margin:12px 0 4px}
+.window-bar>i{display:block;height:100%;background:var(--purple);width:100%;transition:width .1s linear}
+.prompt{font-size:13px;color:var(--muted);letter-spacing:.02em;margin-bottom:2px}
+.word{font-size:38px;font-weight:680;letter-spacing:-.015em;line-height:1.15;word-break:break-word}
+.word.sm{font-size:26px}
+.ctx{font-size:15px;line-height:1.62;color:#22272e}
+.ctx em{font-style:normal;font-weight:700;color:var(--accent);background:var(--accent-weak);
+  padding:0 3px;border-radius:4px}
+.locked{border:1px dashed var(--border2);border-radius:var(--radius-sm);background:var(--surface2);
+  padding:16px;text-align:center;color:var(--muted2);font-size:13px}
+.reveal{border-top:1px dashed var(--border2);margin-top:14px;padding-top:14px;animation:fade .18s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.defbox{border-left:3px solid var(--accent);padding:2px 0 2px 11px;margin-bottom:10px}
+.defbox .lh{font-size:11.5px;color:var(--muted2);letter-spacing:.05em;margin-bottom:2px}
+.defbox .txt{font-size:16px;line-height:1.55}
+.fold{border:1px solid var(--border);border-radius:9px;background:var(--surface2);margin-top:8px}
+.fold>summary{padding:7px 11px;font-size:12.5px;color:var(--muted);cursor:pointer;user-select:none;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"▸ ";color:var(--muted2)}
+.fold[open]>summary::before{content:"▾ "}
+.fold .body{padding:0 11px 10px;font-size:14px}
+.rate{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+.rate button{padding:12px 6px;border-radius:12px;border:1px solid var(--border2);background:var(--surface);
+  font-size:14px;font-weight:600;display:flex;flex-direction:column;align-items:center;gap:2px;transition:.12s}
+.rate button .k{font-size:11px;font-weight:400;color:var(--muted2)}
+.rate button:hover:not(:disabled){border-color:#a9b4c2}
+.rate button.r0.on,.rate button.r0:active{background:var(--bad-weak);border-color:#f3b5b0;color:var(--bad)}
+.rate button.r1.on,.rate button.r1:active{background:var(--warn-weak);border-color:#edd18a;color:var(--warn)}
+.rate button.r2.on,.rate button.r2:active{background:var(--ok-weak);border-color:#a9dfb8;color:var(--ok)}
+.rate button:disabled{opacity:.42;cursor:not-allowed}
+kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;border:1px solid var(--border2);
+  border-bottom-width:2px;border-radius:5px;padding:0 4px;background:#fff;color:var(--muted)}
+.mtag{display:inline-flex;align-items:center;gap:3px;font-size:11px;padding:2px 7px;border-radius:999px;
+  border:1px solid var(--border2);color:var(--muted);background:var(--surface)}
+.mtag.m0{background:var(--bad-weak);border-color:#f3b5b0;color:var(--bad)}
+.mtag.m1{background:var(--warn-weak);border-color:#edd18a;color:var(--warn)}
+.mtag.m2{background:var(--accent-weak);border-color:var(--accent-line);color:#1d4fd8}
+.mtag.m3{background:var(--ok-weak);border-color:#a9dfb8;color:var(--ok)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th,table.tbl td{border-bottom:1px solid var(--border);padding:8px 8px;text-align:left;vertical-align:top}
+table.tbl th{color:var(--muted);font-weight:600;font-size:12px;background:var(--surface2)}
+.list{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface)}
+.list .item{padding:11px 13px;border-bottom:1px solid var(--border)}
+.list .item:last-child{border-bottom:0}
+.prog{display:flex;gap:3px;margin-top:6px}
+.prog i{width:14px;height:4px;border-radius:2px;background:#e3e8ee}
+.prog i.f{background:var(--accent)}
+canvas.draw{border:1px solid var(--border2);border-radius:10px;background:#fff;touch-action:none;width:100%;
+  display:block;cursor:crosshair}
+canvas.chart{width:100%;display:block}
+.sw{width:26px;height:26px;border-radius:7px;border:1px solid var(--border2);display:inline-flex;
+  align-items:center;justify-content:center;font-size:12px;background:#fff}
+.sw.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-weak)}
+.toast{position:fixed;left:50%;bottom:78px;transform:translate(-50%,12px);z-index:80;background:#161a20;color:#fff;
+  padding:9px 15px;border-radius:11px;font-size:13.5px;opacity:0;pointer-events:none;transition:.2s;max-width:88%}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.mask{position:fixed;inset:0;background:rgba(16,20,28,.42);z-index:70;display:flex;align-items:flex-end;
+  justify-content:center;padding:0}
+.modal{background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;
+  max-height:88vh;overflow:auto;animation:up .2s ease}
+@keyframes up{from{transform:translateY(16px);opacity:.6}to{transform:none;opacity:1}}
+.modal h3{margin:0 0 4px;font-size:16px}
+.modal .mrow{margin-bottom:12px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--border);
+  border-radius:11px;background:var(--surface)}
+.opt.on{border-color:var(--accent-line);background:var(--accent-weak)}
+.opt .t{font-size:14px;font-weight:600}
+.opt .d{font-size:12px;color:var(--muted);margin-top:1px}
+.divider{height:1px;background:var(--border);margin:14px 0}
+.warnbox{background:var(--warn-weak);border:1px solid #edd18a;color:#7c4d05;border-radius:11px;padding:10px 12px;font-size:12.5px}
+.infobox{background:var(--accent-weak);border:1px solid var(--accent-line);color:#1e429f;border-radius:11px;
+  padding:10px 12px;font-size:12.5px}
+.badge{font-size:11px;padding:1.5px 6px;border-radius:6px;background:#eef1f5;color:var(--muted);border:1px solid var(--border)}
+.badge.warn{background:var(--warn-weak);color:var(--warn);border-color:#edd18a}
+.badge.ok{background:var(--ok-weak);color:var(--ok);border-color:#a9dfb8}
+.seg{display:flex;border:1px solid var(--border2);border-radius:10px;overflow:hidden;background:#fff;width:fit-content}
+.seg button{border:0;background:transparent;padding:7px 13px;font-size:13.5px;color:var(--muted)}
+.seg button.on{background:var(--accent);color:#fff;font-weight:600}
+.seg button:not(.on)+button{border-left:1px solid var(--border)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#d3dae2;border-radius:9px;border:2px solid transparent;background-clip:content-box}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <h1>Recall</h1><span class="sub">提取式 · FSRS</span>
+      </div>
+      <div class="spacer"></div>
+      <span class="chip accent" id="chipBand">L2</span>
+      <span class="chip" id="chipDue">今日 <strong>0</strong></span>
+    </div>
+  </div>
+  <main id="view"></main>
+</div>
+<nav class="nav" id="nav">
+  <button data-v="home" class="on"><span class="ic">◷</span>今日</button>
+  <button data-v="library"><span class="ic">▤</span>词库</button>
+  <button data-v="add"><span class="ic">＋</span>导入</button>
+  <button data-v="stats"><span class="ic">◔</span>统计</button>
+  <button data-v="settings"><span class="ic">⚙</span>设置</button>
+</nav>
+<div class="toast" id="toast"></div>
+<div id="modal-root"></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Recall · 提取式单词记忆
+   实现依据：《单词记忆软件功能规格文档 v1.0》 MVP(P0) + v1.1(P1)
+   模块映射：M1 内容 / M2 引擎 / M3 交互 / M4 释义 / M5 语境 / M6 助记
+            / M7 睡前 / M9 统计 / M10 设置
+   UI 软更新：APK 只做壳，启动时按 version.json 拉取更新的页面缓存到本地，
+              下次启动由 head 里的引导脚本用缓存重建页面（见 UI_UPDATE 段）。
+   ========================================================================== */
+const APP_VERSION = "1.1.0";
+const UI_CACHE_KEY = "recall-ui-cache";
+const UI_IGNORED_KEY = "ui-ignored-version";
+const UI_MAX_CACHE_CHARS = 1200000;   // 超过就别缓存了：部分 WebView 的 localStorage 只有 5MB
+const DEFAULT_UPDATE_MANIFEST = "";   // 例：https://<你的用户名>.github.io/recall/version.json
+
+/* ---------- 0. 基础工具 ---------- */
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, html) => { const n = document.createElement(tag); if (cls) n.className = cls; if (html != null) n.innerHTML = html; return n; };
+const DAY = 86400000;
+const now = () => Date.now();
+const uid = (p) => p + "_" + now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dayKey = (ts) => { const d = new Date(ts); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const dayStart = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDur = (ms) => {
+  if (ms == null || !isFinite(ms)) return "—";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return s + " 秒";
+  const m = Math.round(s / 60);
+  if (m < 60) return m + " 分";
+  const h = Math.floor(m / 60), rm = m % 60;
+  return rm ? h + " 时 " + rm + " 分" : h + " 时";
+};
+const fmtDays = (d) => d == null ? "—" : (d < 1 ? (d * 24 < 1 ? Math.round(d * 24 * 60) + " 分" : Math.round(d * 24) + " 时") : (d < 30 ? (Math.round(d * 10) / 10) + " 天" : (Math.round(d / 3) / 10) + " 月"));
+const pct = (v) => (Math.round(v * 1000) / 10) + "%";
+function toast(msg, ms) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove("show"), ms || 2200);
+}
+function modal(title, bodyNode, actions) {
+  const root = $("modal-root"); root.innerHTML = "";
+  const mask = el("div", "mask");
+  const m = el("div", "modal");
+  m.appendChild(el("h3", null, esc(title)));
+  if (bodyNode) m.appendChild(bodyNode);
+  const bar = el("div", "row", ""); bar.style.cssText = "justify-content:flex-end;gap:8px;margin-top:14px";
+  (actions || [{ t: "关闭", p: false }]).forEach((a) => {
+    const b = el("button", "btn " + (a.p ? "primary" : ""), esc(a.t));
+    b.onclick = () => { if (a.fn) { if (a.fn(m) === false) return; } closeModal(); };
+    bar.appendChild(b);
+  });
+  m.appendChild(bar); mask.appendChild(m); root.appendChild(mask);
+  mask.onclick = (e) => { if (e.target === mask) closeModal(); };
+  return m;
+}
+function closeModal() { $("modal-root").innerHTML = ""; }
+
+/* ---------- 1. FSRS-5 内核（直接采用开源 FSRS，不自研 —— FR-M2-01 / EV-01） ---------- */
+const FSRS_FACTOR = 19 / 81;
+const FSRS = {
+  // 官方默认参数（19 项），可在「设置 → 高级」替换为用户历史优化后的参数
+  w: [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575,
+      0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621],
+  fuzz: true,
+  _rij() { return Math.random(); },
+  initialStability(g, w) { return Math.max(0.1, w[g - 1]); },
+  initialDifficulty(g, w) { return clamp(w[4] - Math.exp(w[5] * (g - 1)) + 1, 1, 10); },
+  retrievability(tDays, stability, w) {
+    const decay = -(w ? w[17] : FSRS.w[17]);
+    return Math.pow(1 + FSRS_FACTOR * Math.max(0, tDays) / Math.max(0.1, stability), decay);
+  },
+  intervalForRetention(stability, retention, w) {
+    const decay = -(w ? w[17] : FSRS.w[17]);
+    return (stability / FSRS_FACTOR) * (Math.pow(retention, 1 / decay) - 1);
+  },
+  _meanReversion(target, current, w) { return w[7] * target + (1 - w[7]) * current; },
+  nextDifficulty(d, g, w) {
+    const nd = FSRS._meanReversion(FSRS.initialDifficulty(4, w), d - w[6] * (g - 3), w);
+    return clamp(nd, 1, 10);
+  },
+  _meanReversionStable(d, s, r, g, w) {
+    const hardPenalty = g === 2 ? w[15] : 1;
+    const easyBound = g === 4 ? w[16] : 1;
+    const growth = Math.exp(w[8]) * (11 - d) * Math.pow(s, -w[9]) * (Math.exp((1 - r) * w[10]) - 1) * hardPenalty * easyBound;
+    let next = s * (1 + growth);
+    const shortTerm = s / Math.exp(w[17] * w[18]);
+    next = Math.max(next, shortTerm);
+    return clamp(next, 0.1, 36500);
+  },
+  stabilitySuccess(s, r, d, g, w) { return FSRS._meanReversionStable(d, s, r, g, w); },
+  stabilityFail(s, r, d, w) {
+    const nv = w[11] * Math.pow(d, -w[12]) * (Math.pow(s + 1, w[13]) - 1) * Math.exp((1 - r) * w[14]);
+    return clamp(Math.min(nv, s), 0.1, 36500);
+  },
+  /** 应用一次复习。state:{stability,difficulty} -> 新状态 + 下次间隔(天) */
+  review(state, g, tDays, reqRetention, w, maxIntervalDays) {
+    const W = w || FSRS.w;
+    const s0 = state.stability, d0 = state.difficulty;
+    const r = FSRS.retrievability(tDays, s0, W);
+    let s, d;
+    if (g === 1) { d = FSRS.nextDifficulty(d0, g, W); s = FSRS.stabilityFail(s0, r, d, W); }
+    else { d = FSRS.nextDifficulty(d0, g, W); s = FSRS.stabilitySuccess(s0, r, d, g, W); }
+    let ivl = FSRS.intervalForRetention(s, reqRetention, W);
+    const cap = maxIntervalDays || 365;
+    ivl = clamp(ivl, 0.0035, cap);                      // 最小 5 分钟
+    if (FSRS.fuzz && ivl >= 2) {
+      const lo = Math.max(2, Math.round(ivl * 0.95)), hi = Math.round(ivl * 1.05);
+      if (hi > lo) ivl = lo + Math.floor(FSRS._rij() * (hi - lo + 1));
+    }
+    return { stability: s, difficulty: d, retrievability: r, intervalDays: ivl };
+  },
+  /** 新卡初始状态：自评/首评 g（1..4） */
+  initState(g, w) { const W = w || FSRS.w; return { stability: FSRS.initialStability(g, W), difficulty: FSRS.initialDifficulty(g, W) }; }
+};
+
+/* ---------- 2. 设置默认值（全部可后台配置，无需发版 —— FR 9 可配置） ---------- */
+const DEFAULT_SETTINGS = {
+  version: 1,
+  band: "L2",                       // 用户档位 L1–L4（可自由切换）
+  recallWindowMs: 2000,             // 强制回忆窗口 FR-M3-01（2/4/8 秒，默认 2）
+  rtThresholdMs: { L1: 8000, L2: 6000, L3: 4500, L4: 3500 },  // 「想得快」RT 阈值，按档位
+  dailyNewLimit: 20,                // FR-M10-02
+  dailyReviewLimit: 200,
+  requestRetention: 0.9,
+  maximumIntervalDays: 365,
+  releaseStreak: 3,                 // 7.2 放行判定：连续 2–3 次非「想不起来」
+  releaseStreakMin: 2,
+  m1GrowthCap: 0.6,                 // FR-M2-04：M1 间隔增长上限为 M2 基准的 60%
+  interleaveMastery: 3,             // FR-M2-05：M3 才解锁交错
+  mcqMaxRatio: 0.25,                // FR-M3-05：选择题占比 <30%
+  sentenceDifficultyMax: 4,         // FR-M5-03
+  fsrsParams: FSRS.w.slice(),
+  fsrsFuzz: true,
+  sleep: { enabled: true, startHour: 21, endHour: 23, remind: true, targetMin: 5 },
+  dnd: { enabled: false, startHour: 23, endHour: 7 },
+  notifications: true,
+  fontScale: 1,
+  firstRunDone: false,
+  bandPromptIgnored: {},            // FR-M4-06：忽略后不再重复提示同一档位
+  sleepDoneKey: ""                  // 当日睡前队列已完成标记
+};
+const BANDS = {
+  L1: { name: "L1 入门", desc: "初中 / 英语初学者（<2000 词族）", def: "中文为主，英文兜底", img: "具象词配图" },
+  L2: { name: "L2 进阶", desc: "高中 / 四六级（2000–4000 词族）", def: "中英双解", img: "抽象词配图" },
+  L3: { name: "L3 高阶", desc: "考研 / 雅思托福（4000–8000 词族）", def: "英文为主，中文折叠", img: "仅手工助记图" },
+  L4: { name: "L4 专业", desc: "GRE / 学术英语（>8000 词族）", def: "英文释义 + 词源", img: "仅手工助记图" }
+};
+/* 释义语言模式：l1=中文为主 l1_l2=中英双解 l2_fold=英文为主中文折叠 l2_etym=英文+词源 */
+const GLOSS_MODES = {
+  l1: "中文为主，英文兜底折叠",
+  l1_l2: "中英双解并列",
+  l2_fold: "英文为主，中文折叠",
+  l2_etym: "英文释义 + 词源"
+};
+/* 默认「档位 × 词类」释义语言矩阵 —— FR-M4-02（后台可配置） */
+const DEFAULT_GLOSS_MATRIX = {
+  L1: { concrete_lowfreq: "l1", concrete: "l1", abstract: "l1", synonym: "l1_l2", academic: "l1_l2" },
+  L2: { concrete_lowfreq: "l1", concrete: "l1_l2", abstract: "l1_l2", synonym: "l1_l2", academic: "l1_l2" },
+  L3: { concrete_lowfreq: "l1_l2", concrete: "l2_fold", abstract: "l1_l2", synonym: "l1_l2", academic: "l2_fold" },
+  L4: { concrete_lowfreq: "l1_l2", concrete: "l2_etym", abstract: "l2_etym", synonym: "l2_etym", academic: "l2_etym" }
+};
+const WORD_CLASSES = [
+  ["concrete_lowfreq", "具象·低频难词"], ["concrete", "具象词"],
+  ["abstract", "抽象词"], ["synonym", "近义辨析"], ["academic", "学术词"]
+];
+const CARD_TYPES = {
+  meaning: { name: "词义卡", receptive: true, recall: true, tip: "看到词形 → 回忆词义" },
+  form: { name: "词形卡", receptive: false, recall: true, tip: "看到词义 → 回忆拼写/读音" },
+  production: { name: "产出卡", receptive: false, recall: true, tip: "用这个词造一个句子" },
+  listening: { name: "听力卡", receptive: true, recall: true, tip: "听到发音 → 回忆词形与义" }
+};
+const MASTERY = [
+  { k: "M0", n: "不认识", cls: "m0", desc: "提取失败" },
+  { k: "M1", n: "认得", cls: "m1", desc: "模糊 / 仅能再认" },
+  { k: "M2", n: "想得起", cls: "m2", desc: "能提取，速度未达标" },
+  { k: "M3", n: "想得快", cls: "m3", desc: "能提取且反应时达标" }
+];
+
+/* ---------- 3. 存储层（IndexedDB；图像为 Blob，离线本地优先 —— FR 9 离线/隐私） ---------- */
+const DB = (() => {
+  const NAME = "recall_db", VER = 1;
+  let dbp = null;
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      const rq = indexedDB.open(NAME, VER);
+      rq.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        const mk = (n, kp, opts) => { if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, Object.assign({ keyPath: kp }, opts || {})); };
+        mk("kv");
+        mk("words", "word_id");
+        mk("senses", "sense_id");
+        mk("sentences", "sentence_id");
+        mk("cards", "card_id");
+        mk("mnemonics", "mnemonic_id");
+        mk("history", "hid");
+        const t0 = e.target.transaction;
+        const LG = db.createObjectStore("logs", { keyPath: "log_id", autoIncrement: true });
+        LG.createIndex("reviewed_at", "reviewed_at");
+        LG.createIndex("card_id", "card_id");
+        t0.objectStore("senses").createIndex("word_id", "word_id");
+        t0.objectStore("sentences").createIndex("sense_id", "sense_id");
+        t0.objectStore("cards").createIndex("due_at", "due_at");
+        t0.objectStore("cards").createIndex("sense_id", "sense_id");
+        t0.objectStore("mnemonics").createIndex("sense_id", "sense_id");
+      };
+      rq.onsuccess = (e) => res(e.target.result);
+      rq.onerror = (e) => rej(e.target.error);
+    });
+    return dbp;
+  }
+  function tx(stores, mode) { return open().then((db) => db.transaction(stores, mode)); }
+  function put(store, val) { return tx([store], "readwrite").then((t) => new Promise((r, j) => { const q = t.objectStore(store).put(val); q.onsuccess = () => r(val); q.onerror = (e) => j(e.target.error); })); }
+  function bulk(store, vals) { return tx([store], "readwrite").then((t) => new Promise((r, j) => { const o = t.objectStore(store); vals.forEach((v) => o.put(v)); t.oncomplete = () => r(vals.length); t.onerror = (e) => j(e.target.error); })); }
+  function del(store, key) { return tx([store], "readwrite").then((t) => new Promise((r, j) => { const q = t.objectStore(store).delete(key); q.onsuccess = () => r(true); q.onerror = (e) => j(e.target.error); })); }
+  function get(store, key) { return tx([store], "readonly").then((t) => new Promise((r, j) => { const q = t.objectStore(store).get(key); q.onsuccess = () => r(q.result); q.onerror = (e) => j(e.target.error); })); }
+  function all(store) { return tx([store], "readonly").then((t) => new Promise((r, j) => { const q = t.objectStore(store).getAll(); q.onsuccess = () => r(q.result || []); q.onerror = (e) => j(e.target.error); })); }
+  function byIndex(store, idx, key) { return tx([store], "readonly").then((t) => new Promise((r, j) => { const q = t.objectStore(store).index(idx).getAll(key); q.onsuccess = () => r(q.result || []); q.onerror = (e) => j(e.target.error); })); }
+  function count(store) { return tx([store], "readonly").then((t) => new Promise((r, j) => { const q = t.objectStore(store).count(); q.onsuccess = () => r(q.result); q.onerror = (e) => j(e.target.error); })); }
+  const kv = {
+    get: (k, d) => get("kv", k).then((r) => (r == null ? d : (r.v !== undefined ? r.v : d))),
+    set: (k, v) => put("kv", { k, v })
+  };
+  return { open, put, bulk, del, get, all, byIndex, count, kv, tx };
+})();
+
+/* ---------- 4. 全局状态 ---------- */
+const S = {
+  settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+  profile: { user_id: "local", level_band: "L2", vocab_size: 0, gloss_preference: null, tested_at: 0 },
+  cache: { words: [], senses: [], sentences: [], cards: [], mnemonics: [], logs: [] },
+  todayIntroduced: 0,
+  homeReady: false
+};
+function settings() { return S.settings; }
+function saveSettings(patch) {
+  Object.assign(S.settings, patch || {});
+  document.documentElement.style.setProperty("--fs", String(S.settings.fontScale || 1));
+  return DB.kv.set("settings", S.settings);
+}
+async function loadAll() {
+  const st = await DB.kv.get("settings", null);
+  if (st) S.settings = Object.assign(JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), st);
+  if (!S.settings.glossMatrix) S.settings.glossMatrix = JSON.parse(JSON.stringify(DEFAULT_GLOSS_MATRIX));
+  document.documentElement.style.setProperty("--fs", String(S.settings.fontScale || 1));
+  FSRS.w = (S.settings.fsrsParams && S.settings.fsrsParams.length === 19) ? S.settings.fsrsParams.slice() : FSRS.w.slice();
+  FSRS.fuzz = !!S.settings.fsrsFuzz;
+  S.profile = (await DB.kv.get("profile", null)) || S.profile;
+  S.profile.level_band = S.settings.band;
+  await refreshCache();
+}
+async function refreshCache() {
+  const [words, senses, sentences, cards, mnemonics, logs] = await Promise.all([
+    DB.all("words"), DB.all("senses"), DB.all("sentences"), DB.all("cards"), DB.all("mnemonics"), DB.all("logs")
+  ]);
+  S.cache = {
+    words: words || [], senses: senses || [], sentences: sentences || [],
+    cards: cards || [], mnemonics: mnemonics || [], logs: (logs || []).sort((a, b) => a.reviewed_at - b.reviewed_at)
+  };
+}
+const idx = {
+  word: (id) => S.cache.words.find((w) => w.word_id === id),
+  sense: (id) => S.cache.senses.find((s) => s.sense_id === id),
+  sensesOfWord: (wid) => S.cache.senses.filter((s) => s.word_id === wid).sort((a, b) => a.order - b.order),
+  sentencesOf: (sid) => S.cache.sentences.filter((s) => s.sense_id === sid),
+  cardsOfSense: (sid) => S.cache.cards.filter((c) => c.sense_id === sid),
+  card: (id) => S.cache.cards.find((c) => c.card_id === id),
+  mnemonicsOf: (sid) => S.cache.mnemonics.filter((m) => m.sense_id === sid).sort((a, b) => b.created_at - a.created_at),
+  logsOfCard: (cid) => S.cache.logs.filter((l) => l.card_id === cid)
+};
+
+/* ==========================================================================
+   5. M1 词条内容 · M4 释义语言 · M5 语境轮换
+   ========================================================================== */
+
+/** FR-M1-05：词频/具体性/学术标注 → 词类，决定释义语言与配图策略 */
+function wordClassOf(word, sense) {
+  if (!word) return "abstract";
+  if (word.academic || (sense && sense.academic)) return "academic";
+  if (sense && sense.has_nearsyn) return "synonym";
+  if (word.concreteness === "concrete") return (word.frequency_band || 3) <= 2 ? "concrete_lowfreq" : "concrete";
+  if (word.concreteness === "abstract") return "abstract";
+  return "abstract";
+}
+function matrixAt(band, cls) {
+  const m = (settings().glossMatrix || DEFAULT_GLOSS_MATRIX);
+  return ((m[band] || DEFAULT_GLOSS_MATRIX[band] || {})[cls]) || "l1_l2";
+}
+/** FR-M4-05：单词级覆盖 > 卡片快照（引入时按当时档位） > 当前档位矩阵默认 */
+function glossModeFor(word, sense, card) {
+  if (word && word.gloss_override) return word.gloss_override;
+  if (card && card.gloss_mode) return card.gloss_mode;
+  return matrixAt(settings().band, wordClassOf(word, sense));
+}
+/** 按模式渲染释义；英文模式下中文始终以折叠保留（FR-M4-03），展开不计入进度 */
+function renderGloss(o, opts) {
+  const primary = [], fold = [];
+  const mode = o.mode, l1 = o.l1, l2 = o.l2, etym = o.etym;
+  const compact = opts && opts.compact;
+  if (mode === "l1") {
+    if (l1) primary.push({ l: "中文释义", t: l1 });
+    if (l2) fold.push({ l: "English", t: l2 });
+  } else if (mode === "l1_l2") {
+    if (l1) primary.push({ l: "中文释义", t: l1 });
+    if (l2) primary.push({ l: "English", t: l2 });
+  } else if (mode === "l2_fold") {
+    if (l2) primary.push({ l: "English", t: l2 });
+    if (l1) fold.push({ l: "中文释义", t: l1 });
+  } else {
+    if (l2) primary.push({ l: "English", t: l2 });
+    if (etym) primary.push({ l: "词源 Etymology", t: etym });
+    if (l1) fold.push({ l: "中文释义", t: l1 });
+  }
+  let h = "";
+  primary.forEach((p) => {
+    h += '<div class="defbox"><div class="lh">' + esc(p.l) + '</div><div class="txt">' + esc(p.t) + "</div></div>";
+  });
+  if (primary.length === 0) h += '<div class="locked">该义项缺少释义，已标记为「内容待补」。</div>';
+  if (fold.length) {
+    h += '<details class="fold"><summary>查看' + fold.map((f) => f.l).join(" / ") + "（中文兜底，展开不计入学习进度）</summary><div class=\"body\">" +
+      fold.map((f) => '<div style="margin-top:6px"><div class="lh tiny muted">' + esc(f.l) + "</div><div>" + esc(f.t) + "</div></div>").join("") + "</div></details>";
+  }
+  return h;
+}
+
+/** FR-M5-03：例句难度控制在可理解范围，超门槛自动降级（不参与轮换） */
+function sentencePool(senseId) {
+  const all = idx.sentencesOf(senseId);
+  const maxD = settings().sentenceDifficultyMax || 5;
+  const ok = all.filter((s) => (s.difficulty || 1) <= maxD);
+  return { pool: ok.length ? ok : all, degraded: ok.length === 0 && all.length > 0, total: all.length };
+}
+/** 7.4 例句轮换：排除最近展示，按话题多样性优先；不足 2 条标记「内容待补」 */
+function pickSentence(senseId, lastSentenceId) {
+  const info = sentencePool(senseId);
+  const pool = info.pool.slice();
+  if (!pool.length) return { sentence: null, flagged: true };
+  if (pool.length < 2) return { sentence: pool[0], flagged: true };
+  const last = pool.find((s) => s.sentence_id === lastSentenceId) || null;
+  let cand = pool.filter((s) => s.sentence_id !== lastSentenceId);
+  if (!cand.length) cand = pool.slice();
+  if (last) {
+    const diff = cand.filter((s) => s.topic_tag !== last.topic_tag);
+    if (diff.length) cand = diff;
+  }
+  return { sentence: cand[Math.floor(Math.random() * cand.length)], flagged: info.total < 2 };
+}
+/** FR-M1-03 / FR-M5-02：入库校验——锚定义唯一、例句 ≥3 且 ≥3 个不同话题 */
+function validateSense(sense, sens) {
+  const issues = [];
+  const n1 = sense.anchor_l1 ? 1 : 0, n2 = sense.anchor_l2 ? 1 : 0;
+  if (n1 + n2 === 0) issues.push("锚定义缺失");
+  if (Array.isArray(sense.anchor_l1) || Array.isArray(sense.anchor_l2)) issues.push("锚定义多于一条（违反单义项原则）");
+  const topics = new Set((sens || []).map((s) => s.topic_tag).filter(Boolean));
+  if ((sens || []).length < 3) issues.push("例句少于 3 条");
+  if (topics.size < 3) issues.push("例句话题去重后不足 3 个");
+  return { issues, needsFix: issues.length > 0, topics: topics.size };
+}
+async function recomputeContentFlags() {
+  let flagged = 0;
+  for (const s of S.cache.senses) {
+    const r = validateSense(s, idx.sentencesOf(s.sense_id));
+    if (r.needsFix !== !!s.flagged || r.topics !== s.topic_count) {
+      s.flagged = r.needsFix; s.topic_count = r.topics;
+      await DB.put("senses", s); flagged++;
+    }
+  }
+  return flagged;
+}
+
+/* ---------- 6. 导入 / 导出（FR-M1-06, FR-M5 / 9 数据可携带） ---------- */
+const IMPORT_SCHEMA = {
+  version: 1,
+  hint: "words[].senses[].sentences[] 三层结构；anchor_l1/anchor_l2 至少一个；每义项 3–5 条例句且 topic_tag 覆盖 ≥3 个话题"
+};
+/** AI 生成的内容常带 ```json 围栏或前后寒暄，这里剥掉，只取第一个完整 JSON 片段 */
+function stripJsonFence(text) {
+  let t = String(text || "").replace(/^\uFEFF/, "").trim();
+  const fence = t.match(/```(?:json|JSON)?\s*([\s\S]*?)```/);
+  if (fence) t = fence[1].trim();
+  const a = t.search(/[{[]/), b = Math.max(t.lastIndexOf("}"), t.lastIndexOf("]"));
+  if (a >= 0 && b > a) t = t.slice(a, b + 1);
+  return t.replace(/,\s*([}\]])/g, "$1");   // 容错：AI 偶尔留下尾逗号
+}
+function parseImportJSON(text) {
+  let data;
+  try { data = JSON.parse(stripJsonFence(text)); }
+  catch (e) {
+    try { data = JSON.parse(String(text).replace(/,\s*([}\]])/g, "$1")); }
+    catch (e2) { throw new Error("不是合法 JSON（" + e2.message + "）"); }
+  }
+  const words = Array.isArray(data) ? data : (data.words || data.items || []);
+  if (!Array.isArray(words)) throw new Error("未找到 words 数组");
+  return normalizeImport(words);
+}
+function normalizeImport(words) {
+  // 统一为内部三元组，并做入库校验（FR-M1-02 / FR-M3）
+  const out = { words: [], senses: [], sentences: [], rejected: [], flagged: [] };
+  words.forEach((w, wi) => {
+    const lemma = (w.lemma || w.word || w.headword || "").trim();
+    if (!lemma) { out.rejected.push({ lemma: "#" + wi, reason: "缺少词形 lemma" }); return; }
+    const wid = uid("w");
+    out.words.push({
+      word_id: wid, lemma: lemma, pos: (w.pos || "").trim(),
+      frequency_band: clamp(parseInt(w.frequency_band || w.freq, 10) || 3, 1, 5),
+      concreteness: (w.concreteness === "concrete" || w.concrete === true) ? "concrete" : (w.concreteness === "abstract" ? "abstract" : (w.concreteness || "")),
+      academic: !!(w.academic || w.awl),
+      audio_url: w.audio_url || "",
+      gloss_override: w.gloss_override || null,
+      source: w.source || "import", created_at: now()
+    });
+    const senses = w.senses || w.meanings || (w.anchor_l1 ? [{ anchor_l1: w.anchor_l1, anchor_l2: w.anchor_l2, sentences: w.sentences || [] }] : []);
+    (Array.isArray(senses) ? senses : []).forEach((sn, si) => {
+      const sid = uid("s");
+      const sents = (sn.sentences || sn.examples || []).map((x) => (typeof x === "string" ? { text: x } : x));
+      const chk = validateSense(sn, sents);
+      out.senses.push({
+        sense_id: sid, word_id: wid, order: si,
+        anchor_l1: Array.isArray(sn.anchor_l1) ? sn.anchor_l1[0] : (sn.anchor_l1 || sn.def_l1 || sn.zh || ""),
+        anchor_l2: Array.isArray(sn.anchor_l2) ? sn.anchor_l2[0] : (sn.anchor_l2 || sn.def_l2 || sn.en || ""),
+        etymology: sn.etymology || "", has_nearsyn: !!sn.has_nearsyn, academic: !!sn.academic,
+        sequence_like: !!(sn.sequence_like || /^(phrase|collocation|idiom)$/i.test(w.pos || "")),
+        flagged: chk.needsFix, topic_count: chk.topics, issues: chk.issues, created_at: now()
+      });
+      if (chk.needsFix) out.flagged.push({ lemma: lemma, sense: si + 1, anchor: sn.anchor_l1 || sn.anchor_l2 || "", reason: chk.issues.join("；") });
+      sents.forEach((x, xi) => {
+        out.sentences.push({
+          sentence_id: uid("sn"), sense_id: sid,
+          text: (x.text || x.sentence || "").trim(),
+          translation: x.translation || x.trans || "",
+          source: x.source || "", topic_tag: x.topic_tag || x.topic || ("T" + (xi + 1)),
+          register: x.register || "neutral",
+          difficulty: clamp(parseInt(x.difficulty, 10) || 2, 1, 5)
+        });
+      });
+    });
+  });
+  return out;
+}
+/** CSV 简易格式：lemma,pos,freq,concrete,anchor_l1,anchor_l2,e1,e2,e3,t1,t2,t3 */
+function parseImportCSV(text) {
+  const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+  if (!lines.length) throw new Error("CSV 为空");
+  const head = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const rows = lines.slice(1).map((l) => splitCSV(l));
+  return rows.map((cells) => {
+    const o = {}; head.forEach((h, i) => (o[h] = (cells[i] || "").trim()));
+    const sens = [];
+    for (let i = 1; i <= 5; i++) if (o["e" + i]) {
+      sens.push({ text: o["e" + i], translation: o["t" + i + "_cn"] || "", topic_tag: o["t" + i] || ("T" + i) });
+    }
+    return {
+      lemma: o.lemma || o.word, pos: o.pos, frequency_band: o.freq, concreteness: o.concrete, academic: o.academic,
+      senses: [{ anchor_l1: o.anchor_l1, anchor_l2: o.anchor_l2, etymology: o.etymology, sentences: sens }]
+    };
+  });
+}
+function splitCSV(line) {
+  const out = []; let cur = "", q = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (q) { if (c === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { out.push(cur); cur = ""; }
+    else cur += c;
+  }
+  out.push(cur); return out;
+}
+/** 入库：写词条 + 按卡类型建卡（词义/词形/产出/听力分列 —— FR-M6-07） */
+async function commitImport(norm, opts) {
+  const types = (opts && opts.types) || ["meaning", "form"];
+  const newCards = [];
+  for (const s of norm.senses) {
+    const w = norm.words.find((x) => x.word_id === s.word_id);
+    const mode = glossModeFor(w, s, null);
+    types.forEach((tp) => {
+      if (tp === "listening" && !w.audio_url) return;
+      newCards.push({
+        card_id: uid("c"), sense_id: s.sense_id, word_id: s.word_id, card_type: tp,
+        state: "new", due_at: now(), stability: 0, difficulty: 0, retrievability: 0,
+        mastery: 0, reps: 0, lapses: 0, successive: 0, last_sentence_id: null,
+        last_interval_days: 0, gloss_mode: mode, introduced_at: 0, created_at: now()
+      });
+    });
+  }
+  if (norm.words.length) await DB.bulk("words", norm.words);
+  if (norm.senses.length) await DB.bulk("senses", norm.senses);
+  if (norm.sentences.length) await DB.bulk("sentences", norm.sentences);
+  if (newCards.length) await DB.bulk("cards", newCards);
+  await refreshCache();
+  return { words: norm.words.length, senses: norm.senses.length, sentences: norm.sentences.length, cards: newCards.length, rejected: norm.rejected, flagged: norm.flagged };
+}
+async function exportAllJSON() {
+  const words = S.cache.words.map((w) => {
+    const senses = idx.sensesOfWord(w.word_id).map((s) => Object.assign({}, s, { sentences: idx.sentencesOf(s.sense_id) }));
+    return Object.assign({}, w, { senses });
+  });
+  const cards = S.cache.cards, logs = S.cache.logs, mnemonics = S.cache.mnemonics;
+  return {
+    app: "recall", version: 1, exported_at: new Date().toISOString(), schema: IMPORT_SCHEMA,
+    settings: settings(), profile: S.profile, words, cards, logs,
+    mnemonics: mnemonics.map((m) => (m.blob ? Object.assign({}, m, { blob: "[binary omitted]" }) : m))
+  };
+}
+/** 原生 App 里 WebView 不支持 <a download>（Capacitor Bridge 未注册 DownloadListener），走插件直落 MediaStore */
+function isNative() { try { return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); } catch (e) { return false; } }
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => { const s = String(r.result || ""); res(s.slice(s.indexOf(",") + 1)); };
+    r.onerror = () => rej(new Error("读取失败"));
+    r.readAsDataURL(blob);
+  });
+}
+function download(filename, content, mime) {
+  const blob = (content instanceof Blob) ? content : new Blob([content], { type: mime || "text/plain;charset=utf-8" });
+  const plugs = (window.Capacitor && window.Capacitor.Plugins) || null;
+  const saver = plugs && (plugs.FileSaver || plugs.MediaSaver);
+  if (isNative() && saver) {
+    blobToBase64(blob)
+      .then((b64) => saver.save({ base64: b64, filename: filename, mime: blob.type || mime || "application/octet-stream", kind: "file" }))
+      .then((r) => toast("已保存到 " + ((r && r.path) || "手机「下载」目录")))
+      .catch((e) => { toast("原生保存失败：" + ((e && e.message) || e)); webDownload(blob, filename); });
+    return;
+  }
+  webDownload(blob, filename);
+}
+function webDownload(blob, filename) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+}
+/** FR-M9-05：学习记录导出，含词条/时间/题型/自评/RT */
+function logsToCSV(logs) {
+  const CACHE = {};
+  const head = ["时间(本地)", "词条", "词性", "义项ID", "题型", "知识类型", "自评JOL", "FSRS评级", "反应时ms", "间隔天数", "上次间隔天", "掌握度", "模式", "展示例句ID"];
+  const rows = logs.map((l) => {
+    const c = idx.card(l.card_id); const s = c ? idx.sense(c.sense_id) : null; const w = c ? idx.word(c.word_id) : null;
+    return [
+      new Date(l.reviewed_at).toLocaleString("zh-CN", { hour12: false }),
+      w ? w.lemma : "?", w ? w.pos : "", s ? s.sense_id : "", CARD_TYPES[l.card_type] ? CARD_TYPES[l.card_type].name : l.card_type,
+      CARD_TYPES[l.card_type] && CARD_TYPES[l.card_type].receptive ? "接受性" : "产出性",
+      ["想不起来", "模糊", "想起来了"][l.jol], l.fsrs_rating, l.rt_ms,
+      l.elapsed_days != null ? l.elapsed_days : "", l.prev_interval_days != null ? l.prev_interval_days : "",
+      "M" + l.mastery_after, l.mode === "sleep" ? "睡前" : "常规", l.shown_sentence_id || ""
+    ];
+  });
+  const q = (v) => '"' + String(v).replace(/"/g, '""') + '"';
+  return "\ufeff" + [head.map(q).join(",")].concat(rows.map((r) => r.map(q).join(","))).join("\n");
+}
+
+/* ==========================================================================
+   7. M2 复习引擎 —— FSRS 预测层 + 教学约束层（职责分离，可独立回滚 —— 9 可回滚）
+   ========================================================================== */
+const JOL = ["想不起来", "模糊", "想起来了"];
+const INTENSIVE_MIN_MS = 6 * 60000;   // 密集队列：分钟级短间隔（7.2）
+
+function rtThreshold() { return settings().rtThresholdMs[settings().band] || 6000; }
+function topicOfWord(word) {
+  const w = word || {};
+  const cnt = {};
+  idx.sensesOfWord(w.word_id || "").forEach((s) => idx.sentencesOf(s.sense_id).forEach((x) => {
+    const t = x.topic_tag || "misc"; cnt[t] = (cnt[t] || 0) + 1;
+  }));
+  let best = "misc", bv = 0;
+  for (const k in cnt) if (cnt[k] > bv) { bv = cnt[k]; best = k; }
+  return best;
+}
+function logsToday(modeFilter) {
+  const d0 = dayStart(now());
+  return S.cache.logs.filter((l) => l.reviewed_at >= d0 && (!modeFilter || (l.mode || "regular") === modeFilter));
+}
+function distinctCardsToday() { return new Set(logsToday("regular").map((l) => l.card_id)).size; }
+function introducedToday() { const d0 = dayStart(now()); return S.cache.cards.filter((c) => c.introduced_at && c.introduced_at >= d0).length; }
+function isInDND() {
+  const s = settings(); if (!s.dnd.enabled) return false;
+  const h = new Date().getHours();
+  return s.dnd.startHour > s.dnd.endHour ? (h >= s.dnd.startHour || h < s.dnd.endHour) : (h >= s.dnd.startHour && h < s.dnd.endHour);
+}
+function inSleepWindow() {
+  const s = settings(); if (!s.sleep.enabled) return false;
+  const h = new Date().getHours();
+  return h >= s.sleep.startHour && h < s.sleep.endHour;
+}
+function meanInteractionMs() {
+  const arr = S.cache.logs.slice(-60).filter((l) => l.total_ms > 0).map((l) => l.total_ms);
+  return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 15000;
+}
+/** 今日到期量预测（不含睡前任务 —— FR-M7-04） */
+function todayDueCount() {
+  const t = now();
+  const newCap = Math.max(0, settings().dailyNewLimit - introducedToday());
+  let due = 0;
+  S.cache.cards.forEach((c) => { if (c.state !== "mastered" && c.due_at <= t) due++; });
+  return { due: Math.min(due, Math.max(0, settings().dailyReviewLimit - distinctCardsToday())), dueRaw: due, newLeft: newCap };
+}
+
+/** 构造会话队列。mode: regular | sleep */
+function buildQueue(mode) {
+  const st = settings(), t = now();
+  if (mode === "sleep") {
+    // FR-M7-01：仅含当日已完成过提取练习的词，不含新词
+    const done = new Set(logsToday("regular").map((l) => l.card_id));
+    const budget = Math.max(1, Math.round((st.sleep.targetMin * 60000) / meanInteractionMs()));
+    let pool = S.cache.cards.filter((c) => done.has(c.card_id) && c.state !== "mastered" && c.introduced_at > 0);
+    pool = spreadByWord(pool.sort((a, b) => (b.mastery === 0 ? 1 : 0) - (a.mastery === 0 ? 1 : 0) || a.due_at - b.due_at));
+    return { list: pool.slice(0, budget), estMs: budget * meanInteractionMs(), mode: "sleep" };
+  }
+  const revCap = Math.max(0, st.dailyReviewLimit - distinctCardsToday());
+  let due = S.cache.cards.filter((c) => c.state !== "mastered" && c.due_at <= t).sort((a, b) => a.due_at - b.due_at);
+  const picked = due.slice(0, revCap);
+  // 已到期的新词不再重复计入「新词」额度，避免同一张卡一会话出现两次
+  const pickedIds = new Set(picked.map((c) => c.card_id));
+  const newCap = Math.max(0, st.dailyNewLimit - introducedToday());
+  const news = S.cache.cards.filter((c) => c.state === "new" && !pickedIds.has(c.card_id))
+    .sort((a, b) => a.created_at - b.created_at).slice(0, newCap);
+  let list = picked.concat(news);
+  // 交错练习解锁：低掌握度按语义块成组，达标者打乱交错（FR-M2-05）
+  const low = list.filter((c) => (c.mastery || 0) < st.interleaveMastery);
+  const high = list.filter((c) => (c.mastery || 0) >= st.interleaveMastery);
+  low.sort((a, b) => String(topicOfWord(idx.word(a.word_id))).localeCompare(String(topicOfWord(idx.word(b.word_id)))) || a.due_at - b.due_at);
+  shuffle(high);
+  list = low.concat(high);
+  // 选择题占比上限（FR-M3-05）
+  let mcq = 0;
+  list.forEach((c) => { if (c._qtype === "mcq") mcq++; });
+  const maxMcq = Math.floor(list.length * st.mcqMaxRatio);
+  list.forEach((c) => { if (c._qtype === "mcq" && mcq > maxMcq) { c._qtype = "recall"; mcq--; } });
+  return { list: spreadByWord(list), estMs: list.length * meanInteractionMs(), newCount: news.length, reviewed: picked.length };
+}
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+/** 同词的不同卡片尽量不相邻，避免互相提示 */
+function spreadByWord(list) {
+  const out = [], byW = {};
+  list.forEach((c) => { (byW[c.word_id] = byW[c.word_id] || []).push(c); });
+  let remain = true;
+  while (remain) {
+    remain = false;
+    const keys = Object.keys(byW).filter((k) => byW[k].length);
+    shuffle(keys);
+    for (const k of keys) {
+      if (!byW[k].length) continue;
+      const lastW = out.length ? out[out.length - 1].word_id : null;
+      if (lastW === k && keys.length > 1) continue;
+      out.push(byW[k].shift()); remain = true;
+    }
+  }
+  return out;
+}
+
+/** 7.1 掌握度迁移 + 7.3 间隔决策。返回本次调度结果 */
+function gradeCard(card, jol, rtMs, opts) {
+  const st = settings();
+  const mode = (opts && opts.mode) || "regular";
+  const t = now();
+  const fast = rtMs <= rtThreshold();
+  // JOL → FSRS 四档评级（由题意面试题三档映射；RT 达标视为 Easy）
+  const fsrsRating = jol === 0 ? 1 : (jol === 1 ? 2 : (fast ? 4 : 3));
+  const prevMastery = card.mastery || 0;
+  const isFirstContact = !card.reps;
+  const elapsedDays = card.last_reviewed_at ? Math.max(0, (t - card.last_reviewed_at) / DAY) : 0;
+
+  // --- 掌握度迁移（7.1） ---
+  let mastery = prevMastery;
+  if (jol === 0) mastery = 0;
+  else if (jol === 1) mastery = (prevMastery >= 2) ? 1 : prevMastery;
+  else if (jol === 2) mastery = fast ? Math.min(3, (isFirstContact ? 1 : prevMastery + 1)) : (isFirstContact ? 1 : prevMastery);
+
+  // --- 连续成功计数与放行判定（7.2） ---
+  let successive = card.successive || 0;
+  if (jol === 0) successive = 0; else successive++;
+  const wasReleased = card.state === "review" || card.state === "mastered";
+  const released = wasReleased || successive >= st.releaseStreak;
+
+  // --- FSRS 预测层 ---
+  const fState = isFirstContact
+    ? FSRS.initState(fsrsRating === 1 ? 2 : fsrsRating, st.fsrsParams)
+    : { stability: card.stability, difficulty: card.difficulty };
+  let fsrs = null, ivlDays = 0;
+  if (jol === 0) {
+    const r = FSRS.review(fState, 1, elapsedDays, st.requestRetention, st.fsrsParams, st.maximumIntervalDays);
+    fsrs = r; ivlDays = INTENSIVE_MIN_MS / DAY;                 // 失败 → 短间隔，回密集队列
+  } else {
+    fsrs = FSRS.review(fState, fsrsRating, elapsedDays, st.requestRetention, st.fsrsParams, st.maximumIntervalDays);
+    ivlDays = fsrs.intervalDays;
+    const baseM2disk = FSRS.review(fState, 3, elapsedDays, st.requestRetention, st.fsrsParams, st.maximumIntervalDays).intervalDays;
+    if (mastery === 1) ivlDays = Math.min(ivlDays, st.m1GrowthCap * baseM2disk);   // FR-M2-04
+    if (jol === 2 && !fast && mastery < 3) {                                       // RT 超标 → 间隔不增长
+      const prevOk = card.last_success_interval_days || 0;
+      ivlDays = prevOk > 0 ? Math.min(ivlDays, prevOk) : Math.min(ivlDays, Math.max(1, card.last_interval_days || 0));
+    }
+    if (!released) ivlDays = INTENSIVE_MIN_MS / DAY;                               // 7.2 未放行前不拉长间隔
+  }
+  ivlDays = clamp(ivlDays, INTENSIVE_MIN_MS / DAY, st.maximumIntervalDays);
+
+  // --- 写回卡片 ---
+  card.mastery = mastery; card.successive = successive; card.reps = (card.reps || 0) + 1;
+  card.last_reviewed_at = t; card.last_rt_ms = rtMs; card.last_jol = jol;
+  card.stability = fsrs.stability; card.difficulty = fsrs.difficulty; card.retrievability = fsrs.retrievability;
+  if (jol === 0) card.lapses = (card.lapses || 0) + 1;
+  let state = "review";
+  if (jol === 0 || !released) state = "learning";
+  else if (mastery === 3 && successive >= 3) state = "mastered";                   // 连续 N 次 M3 → 低频维护
+  card.state = state;
+  const prevInterval = card.last_interval_days || 0;
+  if (mode === "sleep") {
+    // FR-M7-04：结果纳入记忆模型，但不改动到期时间 → 不增加次日复习量
+    if (jol !== 0) card.last_success_interval_days = Math.max(card.last_success_interval_days || 0, ivlDays);
+  } else {
+    card.last_interval_days = ivlDays;
+    if (jol !== 0 && state !== "learning") card.last_success_interval_days = ivlDays;
+    card.due_at = t + Math.round(ivlDays * DAY);
+  }
+  if (!card.introduced_at) card.introduced_at = t;
+
+  // --- 不可变日志（6.2 约束） ---
+  const sense = idx.sense(card.sense_id);
+  const log = {
+    card_id: card.card_id, sense_id: card.sense_id, word_id: card.word_id, reviewed_at: t,
+    jol: jol, fsrs_rating: fsrsRating, rt_ms: rtMs, total_ms: (opts && opts.total_ms) || rtMs,
+    shown_sentence_id: (opts && opts.sentence_id) || null, card_type: card.card_type, mode: mode,
+    elapsed_days: Math.round(elapsedDays * 1000) / 1000, prev_interval_days: Math.round(prevInterval * 1000) / 1000,
+    next_interval_days: Math.round(ivlDays * 1000) / 1000, mastery_after: mastery, state_after: state,
+    fast: fast, topic: sense ? topicOfWord(idx.word(card.word_id)) : "misc"
+  };
+  // --- 卡片状态可追溯 ---
+  const hist = { hid: uid("h"), card_id: card.card_id, at: t, from_mastery: prevMastery, to_mastery: mastery, jol: jol, mode: mode, due_shift_days: mode === "sleep" ? 0 : ivlDays };
+  return { log, hist, card, ivlDays, mastery, state, fsrsRating, prevMastery, released, fast, elapsedDays };
+}
+async function commitGrade(res) {
+  await DB.put("cards", res.card);
+  const key = await new Promise((k, j) => {
+    DB.tx(["logs"], "readwrite").then((t) => { const q = t.objectStore("logs").add(res.log); q.onsuccess = () => k(q.result); q.onerror = (e) => j(e.target.error); });
+  }).catch((e) => null);
+  if (key != null) res.log.log_id = key;
+  await DB.put("history", res.hist);
+  S.cache.logs.push(res.log);
+  return res;
+}
+
+/* ==========================================================================
+   8. M3 提取交互 · M6 视觉助记
+   ========================================================================== */
+const Study = {
+  mode: "regular", queue: [], i: 0, phase: "idle",
+  card: null, sense: null, word: null, sentence: null, sentenceId: null,
+  startedAt: 0, windowLeft: 0, timer: null, typed: "", lastResult: null,
+  revealed: false, startedTs: 0, totalMs: 0, noTTs: false
+};
+
+function studySession(mode) {
+  const q = buildQueue(mode);
+  if (!q.list.length) {
+    toast(mode === "sleep" ? "今日还没有可做睡前巩固的词" : "暂时没有到期卡片");
+    return;
+  }
+  Study.mode = mode; Study.queue = q.list; Study.i = 0; Study.phase = "intro";
+  window.location.hash = ""; go("study"); renderStudy();
+}
+
+function renderStudy() {
+  const v = $("view");
+  if (Study.i >= Study.queue.length) { finishSession(); return; }
+  const c = Study.queue[Study.i];
+  Study.card = c; Study.sense = idx.sense(c.sense_id); Study.word = idx.word(c.word_id);
+  Study.typed = ""; Study.revealed = false; Study.lastResult = null; Study.sentenceId = null;
+  const total = Study.queue.length + (Study.queue._extra || 0);
+  v.innerHTML = "";
+  const head = el("div", "study-head");
+  head.innerHTML = '<span class="chip">' + (Study.mode === "sleep" ? "睡前巩固" : "常规复习") + " " + (Study.i + 1) + "/" + Study.queue.length + "</span>" +
+    '<span class="chip">' + esc(CARD_TYPES[c.card_type].name) + "</span>" +
+    '<span class="mtag ' + MASTERY[c.mastery || 0].cls + '">' + MASTERY[c.mastery || 0].k + " " + MASTERY[c.mastery || 0].n + "</span>" +
+    (Study.sense && Study.sense.flagged ? '<span class="badge warn">内容待补</span>' : "");
+  const exit = el("button", "btn sm ghost", "结束"); exit.style.marginLeft = "auto";
+  exit.onclick = () => { if (confirm("结束本次会话？已完成的记录会保留。")) { Study.i = Study.queue.length; finishSession(); } };
+  head.appendChild(exit);
+  v.appendChild(head);
+  const card = el("div", "card"); card.style.padding = "18px"; card.id = "scard";
+  v.appendChild(card);
+  // 首次接触：先展示锚定义 + 1 条例句建立形义连接（FR-M5-01 / EV-04b）
+  if (!c.reps) renderIntro(card, c);
+  else renderQuestion(card, c);
+}
+
+function renderIntro(node, c) {
+  const s = Study.sense, w = Study.word;
+  const one = idx.sentencesOf(s.sense_id)[0];
+  node.innerHTML =
+    '<div class="prompt">初次接触 · 建立形义连接（此步不计入提取练习）</div>' +
+    '<div class="word">' + esc(w.lemma) + (w.pos ? ' <span class="tiny muted">' + esc(w.pos) + "</span>" : "") + "</div>" +
+    '<div class="divider"></div>' +
+    renderGloss({ mode: glossModeFor(w, s, c), l1: s.anchor_l1, l2: s.anchor_l2, etym: s.etymology }) +
+    (one ? '<div class="ctx" style="margin-top:8px">' + highlight(one.text, w.lemma) + '</div>' +
+      (one.translation ? '<div class="tiny muted" style="margin-top:4px">' + esc(one.translation) + "</div>" : "") : "") +
+    '<div class="infobox" style="margin-top:12px">原则：记的是「能不能想起来」，不是「看没看过」。下一步就要考你提取。</div>';
+  const b = el("button", "btn primary block lg", "记住了，考我提取 →");
+  b.style.marginTop = "14px"; b.id = "introGo";
+  b.onclick = () => { Study.reps0 = true; Study.sentenceId = one ? one.sentence_id : null; renderQuestion(node, c); };
+  node.appendChild(b);
+  setTimeout(() => { const b2 = $("introGo"); if (b2) b2.focus(); }, 30);
+}
+function highlight(text, lemma) {
+  if (!text) return "";
+  const safe = esc(text);
+  if (!lemma) return safe;
+  try {
+    const re = new RegExp("\\b(" + esc(lemma).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")\\b", "ig");
+    return safe.replace(re, "<em>$1</em>");
+  } catch (e) { return safe; }
+}
+
+function renderQuestion(node, c) {
+  const s = Study.sense, w = Study.word, st = settings();
+  const mode = glossModeFor(w, s, c);
+  const showL1Primary = (mode === "l1" || mode === "l1_l2");
+  let body = "";
+  if (c.card_type === "meaning") {
+    body = '<div class="prompt">这个词是什么意思？先努力想起来</div><div class="word">' + esc(w.lemma) + "</div>";
+  } else if (c.card_type === "form") {
+    const p = pickSentence(s.sense_id, c.last_sentence_id);
+    Study.sentence = p.sentence; Study.sentenceId = p.sentence ? p.sentence.sentence_id : null;
+    const def = showL1Primary ? (s.anchor_l1 || s.anchor_l2) : (s.anchor_l2 || s.anchor_l1);
+    body = '<div class="prompt">哪个词是这个意思？拼出它的词形</div><div class="word sm">' + esc(def || "（缺释义）") + "</div>" +
+      (p.sentence ? '<div class="ctx" style="margin-top:10px">' + esc(p.sentence.text.replace(new RegExp("\\b" + (w.lemma || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "ig"), "________")) + "</div>" : "") +
+      '<div style="margin-top:12px"><input type="text" id="typed" placeholder="拼出这个单词（不含歧义即可）" autocomplete="off" autocapitalize="off" spellcheck="false" /></div>';
+  } else if (c.card_type === "production") {
+    const def = showL1Primary ? (s.anchor_l1 || s.anchor_l2) : (s.anchor_l2 || s.anchor_l1);
+    body = '<div class="prompt">用这个词造一个句子（写出来才算产出）</div><div class="word sm">' + esc(w.lemma) + "</div>" +
+      '<div class="tiny muted" style="margin-top:4px">' + esc(def || "") + "</div>" +
+      '<div style="margin-top:12px"><textarea id="typed" rows="3" placeholder="写一个使用它的句子…"></textarea></div>';
+  } else {
+    body = '<div class="prompt">听发音，回忆词形与意思</div>' +
+      '<button class="btn primary lg block" id="play">▶ 播放发音</button>' +
+      '<input type="text" id="typed" placeholder="写下你听到的单词" style="margin-top:12px" autocapitalize="off" autocomplete="off" />';
+  }
+  const mlist = idx.mnemonicsOf(s.sense_id);
+  const canDraw = !(s.sequence_like) && w.concreteness !== "concrete";   // FR-M6-04/08：仅非具象、非顺序类内容提供绘画
+  node.innerHTML = body;
+  if (c.card_type === "listening") {
+    const pb = $("play"); if (pb) pb.onclick = () => speak(w.lemma);
+  }
+  // —— 回忆窗口 + 自评（FR-M3-01/02）——
+  const winSec = st.recallWindowMs / 1000;
+  const wb = el("div", "window-bar", "<i style='width:100%'></i>");
+  const wtxt = el("div", "small muted", "强制回忆窗口 " + winSec + " 秒 —— 期间不揭晓答案");
+  const helper = el("div", "row wrap", "");
+  helper.style.cssText = "gap:8px;margin-top:8px";
+  if (mlist.length) {
+    const b = el("button", "btn sm", "💡 看我的助记（只是线索，不揭晓）");
+    b.onclick = () => showMnemonicClue(node, mlist); helper.appendChild(b);
+  } else if (canDraw && (c.lapses || 0) >= 2) {
+    helper.appendChild(el("span", "badge warn", "这个词有点难，揭晓后可以换个方式记"));
+  }
+  node.appendChild(wb); node.appendChild(wtxt); node.appendChild(helper);
+  const rate = el("div", "rate");
+  [["想不起来", "0", "r0"], ["模糊", "1", "r1"], ["想起来了", "2", "r2"]].forEach(([t, k, cls]) => {
+    const b = el("button", cls, "<span>" + esc(t) + '</span><span class="k">' + (k === "0" ? "不计 Metacog" : "按 " + (Number(k) + 1)) + "</span>");
+    b.disabled = true; b.dataset.jol = k;
+    b.onclick = () => submitRating(Number(k));
+    rate.appendChild(b);
+  });
+  node.appendChild(rate);
+  const hint = el("div", "small muted", "答案将在自评后揭晓 —— 没有「先偷看再自评」这条路");
+  hint.style.marginTop = "6px"; node.appendChild(hint);
+
+  Study.startedAt = now(); Study.windowLeft = st.recallWindowMs; Study.totalMs = 0;
+  Study.revealNode = node; Study.rateNode = rate;
+  clearInterval(Study.timer);
+  Study.timer = setInterval(() => {
+    Study.windowLeft -= 100;
+    const p = clamp(Study.windowLeft / st.recallWindowMs, 0, 1);
+    const i = wb.firstChild; if (i) i.style.width = (p * 100) + "%";
+    wtxt.textContent = p > 0 ? ("强制回忆中… " + (Math.ceil(Study.windowLeft / 100) / 10) + " 秒后才可自评") : "可以自评了 —— 凭刚才想起来的内容打分";
+    if (Study.windowLeft <= 0) {
+      clearInterval(Study.timer); Study.timer = null;
+      rate.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      wtxt.textContent = "请自评：刚才是否真的想起来了？";
+      wtxt.className = "small"; wtxt.style.color = "var(--purple)";
+    }
+  }, 100);
+  document.onkeydown = (e) => {
+    if (Study.phase === "reveal") { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); nextCard(); } return; }
+    if (["1", "2", "3"].indexOf(e.key) >= 0 && $("view").querySelector(".rate button:not([disabled])")) {
+      const tgt = $("view").querySelector('.rate button[data-jol="' + (Number(e.key) - 1) + '"]');
+      if (tgt && !tgt.disabled) { e.preventDefault(); submitRating(Number(e.key) - 1); }
+    }
+  };
+}
+function speak(text) {
+  try {
+    if (!window.speechSynthesis) { toast("当前环境不支持语音合成"); return; }
+    const u = new SpeechSynthesisUtterance(text); u.lang = "en-US"; u.rate = 0.95;
+    speechSynthesis.cancel(); speechSynthesis.speak(u);
+  } catch (e) { toast("语音不可用（离线环境下可能受限）"); }
+}
+
+async function submitRating(jol) {
+  if (Study.revealed) return;
+  clearInterval(Study.timer); Study.timer = null;
+  Study.revealed = true; Study.phase = "reveal";
+  const rtMs = now() - Study.startedAt;
+  const ti = $("typed"); Study.typed = ti ? ti.value.trim() : "";
+  const c = Study.card, s = Study.sense, w = Study.word;
+  const mode = glossModeFor(w, s, c);
+  const p = (Study.sentenceId ? { sentence: (idx.sentencesOf(s.sense_id).find((x) => x.sentence_id === Study.sentenceId)), flagged: false } : pickSentence(s.sense_id, c.last_sentence_id));
+  const sent = p.sentence;
+  const res = gradeCard(c, jol, rtMs, { mode: Study.mode, sentence_id: sent ? sent.sentence_id : null, total_ms: rtMs });
+  res.log.total_ms = rtMs;
+  await commitGrade(res);
+  c.last_sentence_id = sent ? sent.sentence_id : null;
+  await DB.put("cards", c);
+  // 失败降级后本次会话内至少再出现 1 次（FR-M2-03）
+  if (jol === 0 && Study.i + 3 < Study.queue.length + 40) {
+    const cloneAug = c;
+    if (!Study.queue.slice(Study.i + 1).some((x) => x.card_id === c.card_id)) {
+      Study.queue.splice(Math.min(Study.queue.length, Study.i + 3), 0, cloneAug);
+    }
+  }
+  Study.lastResult = res;
+  renderReveal(res, sent, mode);
+}
+
+function renderReveal(res, sent, mode) {
+  const node = $("scard"), c = Study.card, s = Study.sense, w = Study.word;
+  const rtOk = res.fast, rtMs = res.log.rt_ms;
+  Study.rateNode.querySelectorAll("button").forEach((b) => { b.classList.toggle("on", Number(b.dataset.jol) === res.log.jol); b.disabled = true; });
+  const old = node.querySelector(".reveal"); if (old) old.remove();
+  const mlist = idx.mnemonicsOf(s.sense_id);
+  const canDraw = !(s.sequence_like) && w.concreteness !== "concrete";
+  const r = el("div", "reveal");
+  let h = '<div class="row wrap" style="gap:8px;margin-bottom:10px">' +
+    '<span class="mtag ' + MASTERY[res.mastery].cls + '">' + MASTERY[res.mastery].k + " " + MASTERY[res.mastery].n + " · " + MASTERY[res.mastery].desc + "</span>" +
+    '<span class="mtag">反应时 ' + fmtDur(rtMs) + (rtOk ? " · 达标" : " · 未达标") + "</span>" +
+    '<span class="mtag">下次 ' + (Study.mode === "sleep" ? "不调整（睡前任务不加次日负担）" : fmtDays(res.ivlDays) + " 后") + "</span>" +
+    (res.prevMastery !== res.mastery ? '<span class="mtag">' + MASTERY[res.prevMastery].k + " → " + MASTERY[res.mastery].k + "</span>" : "") +
+    "</div>";
+  // 完整反馈：释义 + 例句 + 助记，至少两类（FR-M3-03）
+  h += renderGloss({ mode: mode, l1: s.anchor_l1, l2: s.anchor_l2, etym: s.etymology });
+  if (sent) {
+    h += '<div class="ctx" style="margin-top:10px">' + highlight(sent.text, w.lemma) + "</div>";
+    h += '<div class="tiny muted" style="margin-top:4px">语境：' + esc(sent.topic_tag || "—") + " · " + esc(sent.register || "—") + (sent.difficulty ? " · 难度 " + sent.difficulty : "") + "</div>";
+    if (sent.translation) h += '<details class="fold"><summary>例句翻译</summary><div class="body">' + esc(sent.translation) + "</div></details>";
+  } else {
+    h += '<div class="warnbox" style="margin-top:8px">该义项缺少可用例句（内容待补），语境多样性收益未生效。</div>';
+  }
+  if (Study.typed) {
+    const target = w.lemma.toLowerCase().trim();
+    const good = (c.card_type === "form" || c.card_type === "listening") ? (Study.typed.toLowerCase().replace(/[^a-z'-]/g, "") === target) : null;
+    h += '<div class="' + (good === false ? "warnbox" : "infobox") + '" style="margin-top:8px">你写的：<b>' + esc(Study.typed) + "</b>" +
+      (good === false ? "　｜　目标词形：<b>" + esc(w.lemma) + "</b>" : (good === true ? "　✓ 拼写正确" : "")) + "</div>";
+  }
+  if (mlist.length) {
+    const m = mlist[0];
+    h += '<div class="divider"></div><div class="tiny muted">你自己的助记（复习线索）</div>';
+    if (m.type === "drawing" && m.blob) { const img = el("img"); img.src = URL.createObjectURL(m.blob); img.style.cssText = "max-width:100%;border-radius:10px;border:1px solid var(--border);margin-top:6px"; r.appendChild(img); }
+    else h += '<div class="ctx" style="margin-top:4px">' + esc(m.content || "") + "</div>";
+  }
+  r.innerHTML = h;
+  node.appendChild(r);
+  // 难词攻坚入口：连续 2 次「想不起来」→ 换个方式记（8.2）
+  const acts = el("div", "row wrap"); acts.style.cssText = "gap:8px;margin-top:14px";
+  if ((c.lapses || 0) >= 2 && canDraw) {
+    const b = el("button", "btn", "🎨 换个方式记（推荐）"); b.onclick = () => openMnemonicPad(s, c); acts.appendChild(b);
+  }
+  const b2 = el("button", "btn ghost sm", "✎ 助记"); b2.onclick = () => openMnemonicPad(s, c); acts.appendChild(b2);
+  const b3 = el("button", "btn ghost sm", "🔊 发音"); b3.onclick = () => speak(w.lemma); acts.appendChild(b3);
+  const nx = el("button", "btn primary", "下一张 ⏎"); nx.style.marginLeft = "auto"; nx.id = "nextBtn"; nx.onclick = nextCard;
+  acts.appendChild(nx); node.appendChild(acts);
+  setTimeout(() => { const n = $("nextBtn"); if (n) n.focus(); }, 40);
+}
+function nextCard() {
+  Study.totalMs = now() - Study.startedAt;
+  clearInterval(Study.timer); Study.i++; Study.phase = "idle";
+  if (Study.mode === "sleep" && Study.i >= Study.queue.length) { markSleepDone(); }
+  renderStudy();
+}
+async function finishSession() {
+  clearInterval(Study.timer); document.onkeydown = null;
+  const done = Study.queue.length;
+  if (Study.mode === "sleep") await markSleepDone();
+  await refreshCache();
+  Study.phase = "idle";
+  go("home");
+  toast("本次完成 " + done + " 张卡片");
+}
+async function markSleepDone() {
+  await saveSettings({ sleepDoneKey: dayKey(now()) });
+}
+
+/* ---------- M6 助记：手绘画板 / 改写 / 关键词联想 ---------- */
+function showMnemonicClue(node, mlist) {
+  const old = node.querySelector(".cluebox"); if (old) old.remove();
+  const box = el("div", "cluebox card"); box.style.cssText = "padding:10px;margin-top:8px;box-shadow:none";
+  let h = '<div class="tiny muted">你的助记线索（不是答案）</div>';
+  mlist.slice(0, 2).forEach((m) => {
+    if (m.type === "drawing" && m.blob) h += '<div data-img="' + m.mnemonic_id + '"></div>';
+    else h += '<div class="ctx" style="margin-top:4px">' + esc(m.content || "") + "</div>";
+  });
+  box.innerHTML = h; node.appendChild(box);
+  box.querySelectorAll("[data-img]").forEach((d) => {
+    const m = mlist.find((x) => x.mnemonic_id === d.dataset.img);
+    const img = el("img"); img.src = URL.createObjectURL(m.blob); img.style.cssText = "max-width:100%;border-radius:8px;border:1px solid var(--border)"; d.appendChild(img);
+  });
+}
+
+function openMnemonicPad(sense, card) {
+  const body = el("div");
+  const seg = el("div", "seg"); seg.style.marginBottom = "10px";
+  const tabs = [["drawing", "手绘"], ["rewrite", "改写定义"], ["keyword", "关键词联想"]];
+  const canDraw = !(sense.sequence_like) && (idx.word(sense.word_id) || {}).concreteness !== "concrete";
+  if (!canDraw) tabs.shift();   // FR-M6-04/08
+  let cur = tabs[0][0];
+  const w = idx.word(sense.word_id);
+  const info = el("div", "infobox", "目标词：<b>" + esc(w.lemma) + "</b>　义项：" + esc(sense.anchor_l1 || sense.anchor_l2 || "") +
+    "<br>关键在「自己生成」，不在画得好不好（生成效应 EV-06c）。");
+  const stage = el("div");
+  body.appendChild(seg); body.appendChild(info); body.appendChild(stage);
+  tabs.forEach(([k, n]) => {
+    const b = el("button", k === cur ? "on" : "", esc(n));
+    b.dataset.k = k; b.onclick = () => { cur = k; seg.querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.k === k)); buildStage(); };
+    seg.appendChild(b);
+  });
+  const existing = idx.mnemonicsOf(sense.sense_id);
+  if (existing.length) {
+    const box = el("div"); box.style.cssText = "margin:8px 0";
+    box.innerHTML = '<div class="tiny muted">已有助记（' + existing.length + ' 条，复习时展示最近的一条）</div>';
+    existing.slice(0, 4).forEach((m) => {
+      const r = el("div", "row"); r.style.cssText = "gap:8px;margin-top:6px;align-items:flex-start";
+      const t = el("div", "small", '<span class="badge">' + esc(typeName(m.type)) + "</span> " + esc(m.content || "（图像）"));
+      if (m.blob) { const im = el("img"); im.src = URL.createObjectURL(m.blob); im.style.cssText = "height:44px;border-radius:6px;border:1px solid var(--border)"; t.insertBefore(im, t.firstChild); t.style.display = "flex"; t.style.gap = "6px"; }
+      const del = el("button", "btn sm ghost", "删除");
+      del.onclick = async () => { await DB.del("mnemonics", m.mnemonic_id); await refreshCache(); closeModal(); openMnemonicPad(sense, card); };
+      r.appendChild(t); r.appendChild(del); box.appendChild(r);
+    });
+    body.insertBefore(box, stage);
+  }
+  function typeName(t) { return { drawing: "手绘", rewrite: "改写", keyword: "关键词", ai_image: "AI 图" }[t] || t; }
+  let canvas = null, ctx2 = null, strokes = [], drawing = false, color = "#161a20", lw = 3;
+  function buildStage() {
+    stage.innerHTML = "";
+    if (cur === "drawing") {
+      if (!canDraw) { stage.innerHTML = '<div class="warnbox">具象词与顺序类内容不提供绘画入口（图片对具象词无效应，见 EV-06d）。请用「改写定义」。</div>'; return; }
+      canvas = el("canvas", "draw"); canvas.width = 900; canvas.height = 560;
+      ctx2 = canvas.getContext("2d"); ctx2.lineJoin = "round"; ctx2.lineCap = "round";
+      ctx2.fillStyle = "#fff"; ctx2.fillRect(0, 0, canvas.width, canvas.height);
+      const tools = el("div", "row wrap"); tools.style.cssText = "gap:6px;margin-top:8px";
+      ["#161a20", "#b3261e", "#15803d", "#2563eb", "#a16207"].forEach((c2) => {
+        const b = el("button", "sw" + (c2 === color ? " on" : ""), ""); b.style.background = c2;
+        b.onclick = () => { color = c2; tools.querySelectorAll("button.sw").forEach((x, i2) => x.classList.toggle("on", x === b)); ctx2.globalCompositeOperation = c2 === "#ffffff" ? "destination-out" : "source-over"; };
+        tools.appendChild(b);
+      });
+      [2, 4, 8].forEach((w2) => { const b = el("button", "btn sm", w2 + "px"); b.onclick = () => (lw = w2); tools.appendChild(b); });
+      const undo = el("button", "btn sm ghost", "撤销"); undo.onclick = doUndo;
+      const clr = el("button", "btn sm ghost", "清空"); clr.onclick = () => { strokes = []; paint(); };
+      tools.appendChild(undo); tools.appendChild(clr);
+      stage.appendChild(canvas); stage.appendChild(tools);
+      canvas.addEventListener("pointerdown", (e) => { drawing = true; canvas.setPointerCapture(e.pointerId); strokes.push({ c: color, w: lw, pts: [pos(e)] }); paint(); });
+      canvas.addEventListener("pointermove", (e) => { if (!drawing) return; strokes[strokes.length - 1].pts.push(pos(e)); paint(); });
+      canvas.addEventListener("pointerup", () => (drawing = false));
+      canvas.addEventListener("pointercancel", () => (drawing = false));
+      function pos(e) { const r2 = canvas.getBoundingClientRect(); return { x: (e.clientX - r2.left) * (canvas.width / r2.width), y: (e.clientY - r2.top) * (canvas.height / r2.height) }; }
+      function paint() {
+        ctx2.fillStyle = "#fff"; ctx2.fillRect(0, 0, canvas.width, canvas.height);
+        strokes.forEach((s2) => {
+          ctx2.strokeStyle = s2.c; ctx2.lineWidth = s2.w; ctx2.beginPath();
+          s2.pts.forEach((p2, i2) => { if (i2 === 0) ctx2.moveTo(p2.x, p2.y); else ctx2.lineTo(p2.x, p2.y); });
+          if (s2.pts.length === 1) ctx2.lineTo(s2.pts[0].x + .1, s2.pts[0].y + .1);
+          ctx2.stroke();
+        });
+      }
+      function doUndo() { strokes.pop(); paint(); }
+      stage._save = () => new Promise((res) => canvas.toBlob((b) => res(b), "image/png"));
+    } else {
+      const ta = el("textarea"); ta.rows = 4; ta.id = "mtext";
+      ta.placeholder = cur === "rewrite" ? "用自己的话把这个义项改写一遍（别抄词典）…" : "想一个和目标词发音/词形相近的母语词，再把它们勾连成一句话…";
+      stage.appendChild(ta);
+      stage._save = async () => {
+        const t = ta.value.trim(); if (!t) { toast("还没有内容"); return null; } return { text: t };
+      };
+    }
+  }
+  buildStage();
+  modal("生成式助记 · " + w.lemma, body, [
+    { t: "取消" },
+    { t: "保存助记", p: true, fn: async () => {
+        const out = await stage._save();
+        if (!out) return false;
+        const rec = { mnemonic_id: uid("mn"), sense_id: sense.sense_id, created_at: now() };
+        if (cur === "drawing") { rec.type = "drawing"; rec.blob = out; rec.content = ""; }
+        else { rec.type = cur; rec.content = out.text; }
+        await DB.put("mnemonics", rec);
+        await refreshCache();
+        toast("已保存，复习时会作为提取线索优先呈现");
+      } }
+  ]);
+}
+
+/* ==========================================================================
+   8.5 UI 软更新（Route B：本地壳 + 远程 UI）+ AI 生成词库提示词
+   ========================================================================== */
+function verParts(v) { return String(v || "0").split(".").map((x) => parseInt(x, 10) || 0); }
+function verNewer(a, b) {
+  const A = verParts(a), B = verParts(b);
+  for (let i = 0; i < 3; i++) { if ((A[i] || 0) !== (B[i] || 0)) return (A[i] || 0) > (B[i] || 0); }
+  return false;
+}
+function uiManifestUrl() { return String((settings().uiManifestUrl || DEFAULT_UPDATE_MANIFEST) || "").trim(); }
+function readUiCache() { try { return JSON.parse(localStorage.getItem(UI_CACHE_KEY) || "null"); } catch (e) { return null; } }
+function clearUiCache() { try { localStorage.removeItem(UI_CACHE_KEY); localStorage.removeItem(UI_IGNORED_KEY); } catch (e) { } }
+async function httpGetText(url, ms) {
+  if (typeof window.__httpGetText === "function") return window.__httpGetText(url, ms);   // 测试/调试钩子
+  const plugs = (window.Capacitor && window.Capacitor.Plugins) || null;
+  const bridge = plugs && plugs.HttpBridge;
+  if (isNative() && bridge) {                       // 原生请求，不受 WebView 的 CORS 限制
+    const r = await bridge.get({ url: url });
+    if (!r || r.status < 200 || r.status >= 300) throw new Error("HTTP " + (r && r.status));
+    return String(r.body || "");
+  }
+  const ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ctl) ctl.abort(); }, ms || 8000);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: ctl ? ctl.signal : undefined });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.text();
+  } finally { clearTimeout(timer); }
+}
+/** 相对地址拼接：优先用原生 URL，失败时手工拼（避免个别环境没有 URL 构造器） */
+function joinUrl(base, rel) {
+  try { return new URL(rel, base).href; } catch (e) {
+    const m = String(base).match(/^(https?:\/\/[^/]+)(\/[^?#]*)?/);
+    if (!m) return rel;
+    if (String(rel).charAt(0) === "/") return m[1] + rel;
+    const p = m[2] || "/";                       // 取 base 的「目录部分」，文件名不算目录
+    const dir = p.slice(0, p.lastIndexOf("/") + 1) || "/";
+    return m[1] + dir + rel;
+  }
+}
+const bust = (u) => u + (u.indexOf("?") >= 0 ? "&" : "?") + "cb=" + Math.random().toString(36).slice(2);
+/** 拉清单 → 比版本 → 拉页面 → 写本地缓存。返回状态说明，不抛错。 */
+async function checkUiUpdate(opts) {
+  const url = uiManifestUrl();
+  if (settings().uiRemoteUpdate === false) return { status: "disabled" };
+  if (!url) return { status: "no-url" };
+  try {
+    const man = JSON.parse(await httpGetText(bust(url), 8000));
+    if (!man || !man.version) throw new Error("清单缺少 version 字段");
+    const ver = String(man.version), note = man.note || "";
+    await saveSettings({ uiLastChecked: now(), uiRemoteVersion: ver, uiRemoteNote: note });
+    if (!verNewer(ver, APP_VERSION)) return { status: "current", version: APP_VERSION, note: note };
+    const cached = readUiCache();
+    if (cached && cached.version === ver) return { status: "cached", version: ver, note: note };
+    if (localStorage.getItem(UI_IGNORED_KEY) === ver && !(opts && opts.force)) return { status: "ignored", version: ver };
+    const indexUrl = joinUrl(url, man.index || "index.html");
+    const html = await httpGetText(bust(indexUrl), 15000);
+    if (!/<script[\s>]/i.test(html)) throw new Error("拉到的不是页面（缺少 script）");
+    if (html.length > UI_MAX_CACHE_CHARS) return { status: "too-big", version: ver, note: note, size: html.length };
+    try { localStorage.setItem(UI_CACHE_KEY, JSON.stringify({ version: ver, note: note, html: html, ts: now() })); }
+    catch (e) { return { status: "cache-fail", version: ver, note: note }; }
+    return { status: "ready", version: ver, note: note };
+  } catch (e) {
+    await saveSettings({ uiLastChecked: now() });
+    return { status: "error", message: (e && e.message) || String(e) };
+  }
+}
+function applyUiCache() { const c = readUiCache(); if (!c || !c.html) return false; document.open(); document.write(c.html); document.close(); return true; }
+function showUpdateBanner(info) {
+  const old = document.getElementById("uiBanner"); if (old) old.remove();
+  if (!info || info.status !== "ready") return;
+  const b = el("div"); b.id = "uiBanner";
+  b.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:90;background:#161a20;color:#fff;padding:9px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap";
+  b.innerHTML = '<div style="flex:1;min-width:170px;font-size:13px">发现新版本 <b>' + esc(info.version) + "</b>" +
+    (info.note ? " · " + esc(info.note) : "") +
+    '<div style="font-size:11px;opacity:.72">重启后自动生效，学习数据不受影响</div></div>';
+  const ghost = (t) => { const x = el("button", "btn sm ghost", t); x.style.color = "#fff"; x.style.borderColor = "#3a4250"; return x; };
+  const apply = el("button", "btn sm", "立即更新"); apply.onclick = () => applyUiCache();
+  const later = ghost("下次启动"); later.onclick = () => b.remove();
+  const ign = ghost("忽略此版本"); ign.onclick = () => { try { localStorage.setItem(UI_IGNORED_KEY, info.version); } catch (e) { } b.remove(); };
+  b.appendChild(apply); b.appendChild(later); b.appendChild(ign);
+  document.body.appendChild(b);
+}
+async function copyText(text) {
+  try { if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; } } catch (e) { }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove(); return ok;
+  } catch (e) { return false; }
+}
+
+/* ---------- 用 AI 生成词库的提示词 ---------- */
+const AI_EXAMPLE = `{
+  "version": 1,
+  "words": [
+    {
+      "lemma": "charge",
+      "pos": "v./n.",
+      "frequency_band": 2,
+      "concreteness": "abstract",
+      "academic": false,
+      "senses": [
+        {
+          "anchor_l1": "收费；要价",
+          "anchor_l2": "to ask an amount of money for something",
+          "sentences": [
+            { "text": "They charge five dollars for delivery.", "translation": "他们收取五美元配送费。", "topic_tag": "shopping", "register": "informal", "difficulty": 1 },
+            { "text": "Hotels in the old town charge twice as much in August.", "translation": "八月份老城区的酒店价格翻倍。", "topic_tag": "travel", "register": "neutral", "difficulty": 2 },
+            { "text": "The consultant charges by the hour rather than by project.", "translation": "这位顾问按小时收费，而不是按项目收费。", "topic_tag": "business", "register": "formal", "difficulty": 2 }
+          ]
+        }
+      ]
+    }
+  ]
+}`;
+const AI_RULES = [
+  "单义项原则：每个义项只写一条锚定义。一张卡里禁止并列多个中文义项；一个词有多个义项就拆成多个 senses 项（多义项词必须拆）。",
+  "每个义项至少 3 条例句，建议 4 条；每条例句都要有中文翻译。",
+  "同一义项内，所有例句的 topic_tag 必须互不相同，且至少覆盖 3 个不同话题（可选池：daily / finance / business / law / politics / technology / science / health / education / nature / weather / travel / sports / arts / crime / literature / military / religion）。",
+  "anchor_l1 与 anchor_l2 必须解释同一个义项，不得中文说 A、英文说 B。",
+  "例句必须像真实语料：长短句混合，至少一条 informal 或 news 语域；禁止全部是教材式例句；例句里不要再重复出现中文释义。",
+  "difficulty 参照例句可读性给 1–5；目标水平之外的生词不要出现在例句里。",
+  "concreteness 填该词条最典型义项的属性：看得见摸得着填 concrete，概念/情感/动作过程填 abstract。",
+  "frequency_band：1=最高频（如 the/make），5=低频学术难词。academic 仅在该词常见于学术语域时填 true。"
+];
+function buildAiPrompt(o) {
+  const count = clamp(parseInt(o.count, 10) || 20, 1, 200);
+  const senses = o.senses === "2" ? "2" : "1";
+  const topic = (o.topic && o.topic !== "不限") ? o.topic : "不限（但话题分布要拉开，例句不要集中在同一场景）";
+  const level = (o.level && o.level !== "自定义") ? o.level : "通用高频 + 中高级";
+  const batch = count > 25 ? "词条较多时质量会下降，请分批生成，每批不超过 25 个。" : "";
+  if (o.format === "csv") {
+    return [
+      "你是一位为「提取式单词记忆软件」制作词库的内容工程师。请严格按下面的规则生成词表。",
+      "",
+      "【任务】生成 " + count + " 个英语词条，目标水平：" + level + "；主题方向：" + topic + "；每个词写 " + senses + " 个义项。",
+      "",
+      "【输出格式】只输出 CSV 文本，第一行必须是下面这行表头，之后每行一个词，字段用英文逗号分隔，值里不要出现逗号：",
+      "lemma,pos,freq,concrete,anchor_l1,anchor_l2,e1,t1,e2,t2,e3,t3",
+      "",
+      "字段含义：lemma 词形（小写）；pos 词性；freq 词频 1–5；concrete 取 concrete 或 abstract；",
+      "anchor_l1 唯一中文锚定义；anchor_l2 对应英文释义；e1/e2/e3 三条例句；t1/t2/t3 三例句的话题标签（必须互不相同）。",
+      "",
+      "【必须遵守】",
+      AI_RULES.map((r, i) => (i + 1) + ". " + r).join("\n"),
+      "9. 输出里不要出现表头以外的说明文字、不要 markdown 代码块。",
+      "",
+      "【示例行】",
+      'charge,v./n.,2,abstract,收费；要价,to ask an amount of money for something,"They charge five dollars for delivery.",shopping,"Hotels charge twice as much in August.",travel,"The consultant charges by the hour.",business',
+      "",
+      batch, "现在输出 CSV："
+    ].filter(Boolean).join("\n");
+  }
+  return [
+    "你是一位为「提取式单词记忆软件」制作词库的内容工程师。下面这份规格是该软件的硬性入库规则，照做即可一次通过校验。",
+    "",
+    "【任务】",
+    "为我生成 " + count + " 个英语词条的完整词库条目。",
+    "目标水平：" + level + "。",
+    "主题方向：" + topic + "。",
+    "每个词写 " + senses + " 个义项" + (senses === "2" ? "（挑选该词最常用的两个义项，必须拆成两个 senses 项）" : "（只写最常用的那个义项）") + "。",
+    "",
+    "【输出格式】",
+    "只输出一个 JSON 对象，顶层含 words 数组。不要写任何解释文字，不要用 markdown 代码块包裹，JSON 前后不要加任何内容。",
+    "",
+    "【结构与字段】",
+    '{ "version": 1, "words": [ { "lemma": "词形（小写）", "pos": "n./v./adj./adv.",',
+    '  "frequency_band": 1到5, "concreteness": "concrete 或 abstract", "academic": true或false,',
+    '  "senses": [ { "anchor_l1": "唯一中文锚定义", "anchor_l2": "对应的英文释义",',
+    '    "sentences": [ { "text": "例句", "translation": "中文翻译",',
+    '      "topic_tag": "话题标签", "register": "neutral/informal/formal/news/academic/literary/technical",',
+    '      "difficulty": 1到5 } ] } ] } ] }',
+    "",
+    "【必须遵守的 8 条规则】",
+    AI_RULES.map((r, i) => (i + 1) + ". " + r).join("\n"),
+    "",
+    "【输出前自检（不通过就先修再输出）】",
+    "a. 每个 sense 的 sentences 数量 ≥ 3；",
+    "b. 每个 sense 内的 topic_tag 无重复、数量 ≥ 3；",
+    "c. 每个 sense 的 anchor_l1 非空，且与 anchor_l2 指同一个义项；",
+    "d. lemma 无重复；JSON 可被 JSON.parse 直接解析（无注释、无尾逗号、无单引号）。",
+    "",
+    "【格式示例（只示范结构，内容不要照抄）】",
+    AI_EXAMPLE,
+    "",
+    batch,
+    "现在输出 JSON："
+  ].filter(Boolean).join("\n");
+}
+function openAiPromptBuilder() {
+  const body = el("div");
+  body.innerHTML =
+    '<div class="infobox">提示词已经把软件里的入库硬规则写死了：<b>单义项</b>、<b>每义项 ≥3 条例句</b>、<b>topic_tag 互不重复且 ≥3 个话题</b>。照抄给任意 AI（豆包 / DeepSeek / ChatGPT / Kimi 都行），拿回 JSON 再粘回「导入」页即可。</div>';
+  const mk = (id, label, opts, val) => {
+    const w = el("div", "fld-row");
+    w.innerHTML = '<label class="fld">' + label + "</label>";
+    const s = el("select"); s.id = id;
+    s.innerHTML = opts.map((o) => '<option' + (o === val ? " selected" : "") + ">" + esc(o) + "</option>").join("");
+    w.appendChild(s); body.appendChild(w);
+  };
+  const mkFree = (id, label, ph) => {
+    const w = el("div", "fld-row");
+    w.innerHTML = '<label class="fld">' + label + "</label>";
+    const i = el("input"); i.type = "text"; i.id = id; i.placeholder = ph;
+    w.appendChild(i); body.appendChild(w);
+  };
+  mk("ai_count", "生成词条数", ["10", "20", "30", "50", "80"], "20");
+  mk("ai_level", "目标水平", ["四级", "六级", "考研", "雅思", "托福", "GRE", "日常/职场", "自定义"], "六级");
+  mk("ai_topic", "主题方向", ["不限", "日常生活", "科技互联网", "职场商务", "学术研究", "文学艺术", "健康医疗", "法律政策", "自然环境", "旅行地理"], "不限");
+  mk("ai_senses", "每词义项数", ["1", "2"], "2");
+  mk("ai_format", "输出格式", ["JSON（推荐，字段全）", "CSV（简单，字段少）"], "JSON（推荐，字段全）");
+  mkFree("ai_custom", "自定义补充要求（可空）", "例：偏学术、少用被动句、避开人名地名");
+  const prev = el("textarea"); prev.id = "ai_preview"; prev.rows = 10; prev.readOnly = true;
+  prev.style.cssText = "margin-top:4px;font-size:12px;line-height:1.5";
+  body.appendChild(prev);
+  function refresh() {
+    prev.value = buildAiPrompt({
+      count: $("ai_count").value, level: $("ai_level").value, topic: $("ai_topic").value,
+      senses: $("ai_senses").value, format: $("ai_format").value.indexOf("JSON") === 0 ? "json" : "csv"
+    }) + (($("ai_custom").value || "").trim() ? "\n\n【额外要求】\n" + $("ai_custom").value.trim() : "");
+  }
+  refresh();
+  body.querySelectorAll("select").forEach((s) => (s.onchange = refresh));
+  $("ai_custom").oninput = refresh;
+  modal("AI 生成词库 · 提示词", body, [
+    { t: "关闭" },
+    { t: "复制提示词", p: true, fn: async () => { toast((await copyText(prev.value)) ? "已复制，粘贴给 AI 即可" : "复制失败，请手动全选复制"); } }
+  ]);
+}
+
+/* ==========================================================================
+   9. 视图层：今日 / 词库 / 导入 / 统计 / 设置
+   ========================================================================== */
+let currentView = "home";
+function go(v) {
+  currentView = v;
+  document.querySelectorAll("#nav button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  window.scrollTo(0, 0);
+  if (v === "home") renderHome();
+  else if (v === "library") renderLibrary();
+  else if (v === "add") renderAdd();
+  else if (v === "stats") renderStats();
+  else if (v === "settings") renderSettings();
+  updateTopChips();
+}
+function updateTopChips() {
+  $("chipBand").textContent = settings().band;
+  const d = todayDueCount();
+  $("chipDue").innerHTML = "今日剩余 <strong>" + d.due + "</strong>";
+  $("chipDue").className = "chip" + (d.due > 0 ? " accent" : "");
+}
+
+function renderHome() {
+  const v = $("view"), st = settings(), t = now();
+  const d = todayDueCount();
+  const doneToday = distinctCardsToday();
+  const logsTodayArr = logsToday();
+  const ok = logsTodayArr.filter((l) => l.jol > 0).length;
+  const acc = logsTodayArr.length ? ok / logsTodayArr.length : 0;
+  const flagged = S.cache.senses.filter((s) => s.flagged).length;
+  const mmv = new Set(logsTodayArr.filter((l) => l.mastery_after === 3).map((l) => l.card_id)).size;
+  const spentMs = logsTodayArr.reduce((a, l) => a + (l.total_ms || 0), 0);
+  v.innerHTML = "";
+  // —— 今日任务 ——
+  const sec1 = el("div", "sec");
+  sec1.innerHTML = '<div class="sec-title">今日提取练习 <span class="hint">任何不产生提取动作的交互都不计进度</span></div>';
+  const c1 = el("div", "card"); c1.style.padding = "16px";
+  const total = d.due + Math.min(d.newLeft, Math.max(0, st.dailyNewLimit));
+  const estMs = (d.due * meanInteractionMs());
+  c1.innerHTML =
+    '<div class="row wrap" style="gap:14px;align-items:baseline"><div><div class="stat"><div class="v">' + d.due + '</div><div class="k">到期卡片</div></div></div>' +
+    '<div style="flex:1;min-width:150px"><div class="small muted">预计耗时</div><div style="font-size:19px;font-weight:650">' + fmtDur(estMs) + '</div>' +
+    '<div class="tiny muted">按你近期每张 ' + fmtDur(meanInteractionMs()) + ' 的节奏估算（含回忆窗口与反馈阅读）</div></div></div>' +
+    '<div class="divider"></div>' +
+    '<div class="row wrap small muted" style="gap:12px">' +
+    '<span>今日新词额度 ' + Math.max(0, st.dailyNewLimit - introducedToday()) + " / " + st.dailyNewLimit + "</span>" +
+    "<span>已完成 " + doneToday + " 张</span>" +
+    "<span>今日非遗忘率 " + pct(acc) + "</span>" +
+    "<span>今日达成 M3 " + mmv + " 个</span></div>";
+  const btnRow = el("div", "row"); btnRow.style.cssText = "gap:8px;margin-top:14px";
+  const start = el("button", "btn primary lg", d.due > 0 ? "开始提取练习 →" : "今天没有到期卡片");
+  start.style.flex = "1"; start.onclick = () => studySession("regular");
+  start.disabled = d.due === 0;
+  btnRow.appendChild(start);
+  c1.appendChild(btnRow); sec1.appendChild(c1); v.appendChild(sec1);
+
+  // —— 睡前巩固（FR-M7）——
+  if (st.sleep.enabled) {
+    const inWin = inSleepWindow() && !isInDND();
+    const already = (st.sleepDoneKey === dayKey(t));
+    const eligible = new Set(logsToday("regular").map((l) => l.card_id)).size;
+    const s7 = el("div", "sec");
+    s7.innerHTML = '<div class="sec-title">睡前巩固 <span class="hint">学后入睡才有效 · EV-08</span></div>';
+    const c7 = el("div", "card"); c7.style.padding = "14px 16px";
+    c7.innerHTML = '<div class="row wrap" style="gap:8px">' +
+      '<span class="badge ' + (inWin ? "ok" : "") + '">' + (inWin ? "时段内" : st.sleep.startHour + ":00–" + st.sleep.endHour + ":00") + "</span>" +
+      '<span class="small muted">可做词数 ' + eligible + " 个（不含新词）</span>" +
+      (already ? '<span class="badge ok">今日已完成</span>' : "") + "</div>" +
+      '<div class="tiny muted" style="margin-top:6px">规则：只做一轮轻量提取 + 反馈，结果进记忆模型但不增加次日复习量。</div>';
+    const b7 = el("button", "btn lg", "开始睡前一轮");
+    b7.style.cssText = "width:100%;margin-top:10px";
+    b7.disabled = !eligible;
+    b7.className = "btn lg " + (inWin && !already ? "primary" : "");
+    b7.onclick = () => studySession("sleep");
+    if (already) b7.textContent = "今日睡前队列已完成 ✓";
+    c7.appendChild(b7); s7.appendChild(c7); v.appendChild(s7);
+  }
+  // —— 掌握度分布（FR-M9-01）——
+  const dist = masteryDistribution();
+  const s2 = el("div", "sec");
+  s2.innerHTML = '<div class="sec-title">掌握度分布 <span class="hint">按「☆卡片」统计，不只是背诵天数</span></div>';
+  const c2 = el("div", "card"); c2.style.padding = "14px 16px";
+  const totalCards = dist.reduce((a, b) => a + b.n, 0) || 1;
+  c2.innerHTML = '<div class="row" style="height:10px;border-radius:99px;overflow:hidden;background:#e9edf2">' +
+    dist.map((d2, i) => '<i title="' + d2.k + '" style="background:' + ["#b3261e", "#a16207", "#2563eb", "#15803d"][i] + ';height:10px;width:' + (d2.n / totalCards * 100) + '%"></i>').join("") + "</div>" +
+    '<div class="grid4" style="margin-top:10px">' + dist.map((d2, i) =>
+      '<div class="stat"><div class="v" style="font-size:17px">' + d2.n + '</div><div class="k"><span class="mtag ' + MASTERY[i].cls + '">' + d2.k + "</span> " + d2.nm + "</div></div>").join("") + "</div>" +
+    '<div class="tiny muted" style="margin-top:8px">&nbsp;</div>';
+  s2.appendChild(c2); v.appendChild(s2);
+  const tinyMuted = c2.querySelector(".tiny.muted");
+  if (tinyMuted) tinyMuted.innerHTML = "已启用卡片 " + totalCards + " 张　·　词条 " + S.cache.words.length + " 个　·　义项 " + S.cache.senses.length +
+    " 个　·　例句 " + S.cache.sentences.length + " 条" + (flagged ? '　·　<span class="badge warn">内容待补 ' + flagged + " 个义项</span>" : "");
+  if (flagged) {
+    const fb = el("button", "btn sm ghost", "查看内容待补 →"); fb.onclick = () => { go("library"); setTimeout(() => { const t2 = $("wq"); if (t2) { t2.value = ":flag"; t2.dispatchEvent(new Event("input")); } }, 60); };
+    c2.appendChild(fb);
+  }
+  // —— 健康度 ——
+  const health = computeHealth();
+  const s3 = el("div", "sec");
+  s3.innerHTML = '<div class="sec-title">效果健康度 <span class="hint">延迟才是真成绩 · 10 章</span></div>';
+  const c3 = el("div", "grid3");
+  c3.innerHTML =
+    statCard(pct(health.firstDaySuccess), "首日提取成功率", "目标 >70%", health.firstDayN) +
+    statCard(health.retention7 == null ? "—" : pct(health.retention7), "7 天延迟保持率", "核心一级指标", health.r7n) +
+    statCard(health.retention30 == null ? "—" : pct(health.retention30), "30 天延迟保持率", "北极星", health.r30n);
+  s3.appendChild(c3); v.appendChild(s3);
+}
+function statCard(val, key, note, n) {
+  return '<div class="stat"><div class="v">' + val + '</div><div class="k">' + key + '</div><div class="n">' + (note || "") + (n != null ? " · n=" + n : "") + "</div></div>";
+}
+
+function renderLibrary() {
+  const v = $("view");
+  v.innerHTML = '<div class="sec-title row">词库 <span class="hint">点开词条可覆盖释义语言 / 查看内容质量</span><div class="spacer"></div></div>';
+  const box = el("input"); box.type = "text"; box.id = "wq"; box.placeholder = "搜索词条（输入 :flag 看内容待补）";
+  box.style.marginBottom = "10px";
+  box.oninput = () => { drawList(box.value.trim().toLowerCase()); };
+  v.appendChild(box);
+  const holder = el("div"); holder.id = "list"; v.appendChild(holder);
+  window.drawList = function (q) {
+    const flagMode = q === ":flag";
+    let words = S.cache.words.slice().sort((a, b) => a.lemma.localeCompare(b.lemma));
+    if (flagMode) words = words.filter((w) => idx.sensesOfWord(w.word_id).some((s) => s.flagged));
+    else if (q) words = words.filter((w) => w.lemma.toLowerCase().includes(q) || (w.pos || "").toLowerCase().includes(q));
+    holder.innerHTML = "";
+    if (!words.length) { holder.innerHTML = '<div class="card empty">没有匹配的词条。去「导入」加入词表。</div>'; return; }
+    const wrap = el("div", "list");
+    words.slice(0, 300).forEach((w) => {
+      const senses = idx.sensesOfWord(w.word_id);
+      const cards = senses.reduce((a, s) => a.concat(idx.cardsOfSense(s.sense_id)), []);
+      const avg = cards.length ? cards.reduce((a, c) => a + (c.mastery || 0), 0) / cards.length : 0;
+      const it = el("div", "item");
+      const flagged = senses.filter((s) => s.flagged).length;
+      it.innerHTML = '<div class="row"><div style="flex:1;min-width:0"><div style="font-size:16px;font-weight:600">' + esc(w.lemma) +
+        (w.pos ? ' <span class="tiny muted">' + esc(w.pos) + "</span>" : "") + '</div>' +
+        '<div class="tiny muted">' + senses.length + " 义项 · " + cards.length + " 卡片 · 均掌握度 M" + Math.round(avg) +
+        ' <span class="badge">词频 ' + (w.frequency_band || "-") + "</span> <span class=\"badge\">" + (w.concreteness || "未标注") + "</span>" +
+        (w.academic ? ' <span class="badge">学术</span>' : "") +
+        (w.gloss_override ? ' <span class="badge ok">释义覆盖：' + GLOSS_MODES[w.gloss_override].split("，")[0] + "</span>" : "") + "</div></div>" +
+        '<span class="mtag ' + MASTERY[Math.round(avg)].cls + '">' + MASTERY[Math.round(avg)].k + "</span>" +
+        (flagged ? '<span class="badge warn">待补 ' + flagged + "</span>" : "") + "</div>";
+      it.style.cursor = "pointer";
+      it.onclick = () => openWordDetail(w);
+      wrap.appendChild(it);
+    });
+    holder.appendChild(wrap);
+    if (words.length > 300) holder.appendChild(el("div", "tiny muted", "仅显示前 300 条"));
+  };
+  drawList("");
+}
+
+function openWordDetail(word) {
+  const senses = idx.sensesOfWord(word.word_id);
+  const body = el("div");
+  body.innerHTML = '<div class="row wrap small muted" style="gap:8px"><span>词频等级 ' + (word.frequency_band || "-") + "</span><span>具体性 " +
+    (word.concreteness || "未标注") + "</span><span>词类 → " + esc(WORD_CLASSES.find((x) => x[0] === wordClassOf(word, senses[0]))[1]) + "</span></div>";
+  const ov = el("div", "mrow");
+  ov.innerHTML = '<label class="fld">单词级释义语言覆盖（优先级最高，不会被自动重置）</label>';
+  const sel = el("select");
+  sel.innerHTML = '<option value="">跟随档位默认</option>' + Object.keys(GLOSS_MODES).map((k) => '<option value="' + k + '">' + GLOSS_MODES[k] + "</option>").join("");
+  sel.value = word.gloss_override || "";
+  ov.appendChild(sel);
+  body.appendChild(ov);
+  const warn = el("div", "tiny muted", "档位切换只影响后续新学的词条；这里填写的覆盖值对该词所有卡片立即生效。");
+  warn.style.marginTop = "-6px"; body.appendChild(warn);
+  senses.forEach((s) => {
+    const box = el("div", "card"); box.style.cssText = "padding:11px;margin-bottom:9px;box-shadow:none";
+    const cards = idx.cardsOfSense(s.sense_id);
+    let h = '<div class="tiny muted">义项 #' + (s.order + 1) + ' · 卡片 ' + cards.length + " 张</div>" +
+      renderGloss({ mode: glossModeFor(word, s, cards[0]), l1: s.anchor_l1, l2: s.anchor_l2, etym: s.etymology });
+    const sents = idx.sentencesOf(s.sense_id);
+    const topics = new Set(sents.map((x) => x.topic_tag));
+    h += '<div class="tiny muted" style="margin-top:6px">例句 ' + sents.length + " 条 · 话题去重 " + topics.size + " 个" +
+      (s.flagged ? '　<span class="badge warn">内容待补：' + esc((s.issues || []).join("；")) + "</span>" : "") + "</div>";
+    sents.forEach((x) => { h += '<div class="small" style="margin-top:4px">· ' + esc(x.text) + ' <span class="badge">' + esc(x.topic_tag) + "</span></div>"; });
+    box.innerHTML = h;
+    const mnRec = idx.mnemonicsOf(s.sense_id);
+    if (mnRec.length) {
+      const r = el("div", "tiny muted", "助记 " + mnRec.length + " 条");
+      r.style.marginTop = "6px"; box.appendChild(r);
+    }
+    body.appendChild(box);
+  });
+  modal(word.lemma + " · 词条详情", body, [
+    { t: "关闭" },
+    { t: "重算内容校验", fn: async () => { const n = await recomputeContentFlags(); toast("已重算，变更 " + n + " 个义项"); await refreshCache(); } },
+    { t: "保存覆盖", p: true, fn: async () => {
+        word.gloss_override = sel.value || null;
+        await DB.put("words", word);
+        const cs = senses.reduce((a, s) => a.concat(idx.cardsOfSense(s.sense_id)), []);
+        const nm = sel.value ? sel.value : matrixAt(settings().band, wordClassOf(word, senses[0]));
+        for (const c of cs) { c.gloss_mode = nm; await DB.put("cards", c); }
+        await refreshCache(); toast("已保存：该词所有卡片立即生效");
+      } }
+  ]);
+}
+
+function renderAdd() {
+  const v = $("view");
+  v.innerHTML = '';
+  // —— ① 先用 AI 生成词库 ——
+  const gen = el("div", "sec");
+  gen.innerHTML = '<div class="sec-title">① 用 AI 生成词库 <span class="hint">不会写格式？提示词已经内置</span></div>';
+  const gc = el("div", "card"); gc.style.padding = "14px 16px";
+  gc.innerHTML =
+    '<div class="small muted">点开后会按「词条数 / 目标水平 / 主题 / 义项数 / 输出格式」拼好一段提示词，' +
+    '里面已经把本软件的入库硬规则写死（单义项、每义项 ≥3 条例句、话题不重复）。复制给任意大模型，' +
+    '拿回 JSON 粘到下面 ② 即可入库。</div>';
+  const grow = el("div", "row wrap"); grow.style.cssText = "gap:8px;margin-top:10px";
+  const gb = el("button", "btn primary", "生成提示词");
+  gb.onclick = openAiPromptBuilder;
+  const gcopy = el("button", "btn", "复制示例词库 JSON");
+  gcopy.onclick = async () => { toast((await copyText(AI_EXAMPLE)) ? "已复制示例结构，可给 AI 参考" : "复制失败，请手动全选"); };
+  grow.appendChild(gb); grow.appendChild(gcopy);
+  gc.appendChild(grow); gen.appendChild(gc); v.appendChild(gen);
+  // —— ② 导入 ——
+  const sHead = el("div", "sec");
+  sHead.innerHTML = '<div class="sec-title">② 导入词表 <span class="hint">锚定义唯一 · 每义项 3–5 条跨话题例句</span></div>';
+  v.appendChild(sHead);
+  const c = el("div", "card"); c.style.padding = "16px";
+  c.innerHTML =
+    '<div class="small muted">支持两种格式：</div>' +
+    '<div class="small" style="margin-top:6px"><b>JSON（推荐，信息最全）</b>：三层结构 <code>words → senses → sentences</code>；每义项 <code>anchor_l1/anchor_l2</code> 至少一个，例句带 <code>topic_tag</code>（≥3 个不同话题）。</div>' +
+    '<div class="small" style="margin-top:6px"><b>CSV</b>：表头 <code>lemma,pos,freq,concrete,anchor_l1,anchor_l2,e1,e2,e3,t1,t2,t3</code>。</div>' +
+    '<div class="divider"></div>';
+  const fileRow = el("div", "row wrap"); fileRow.style.gap = "8px";
+  const fi = el("input"); fi.type = "file"; fi.accept = ".json,.csv,.txt"; fi.style.display = "none";
+  fi.onchange = async () => {
+    const f = fi.files[0]; if (!f) return;
+    const txt = await f.text();
+    try {
+      const norm = f.name.match(/\.csv$/i) ? normalizeImport(parseImportCSV(txt)) : parseImportJSON(txt);
+      await doImport(norm, "导入成功");
+    } catch (e) { toast("解析失败：" + e.message); }
+    fi.value = "";
+  };
+  const pick = el("button", "btn primary", "选择文件"); pick.onclick = () => fi.click();
+  fileRow.appendChild(fi); fileRow.appendChild(pick);
+  c.appendChild(fileRow);
+  const ta = el("textarea"); ta.rows = 8; ta.id = "pasteImport";
+  ta.placeholder = '也可以直接粘贴 JSON：\n{"words":[{"lemma":"bank","frequency_band":2,"concreteness":"concrete","senses":[{"anchor_l1":"银行","anchor_l2":"a business that keeps money","sentences":[{"text":"I met her at the bank.","topic_tag":"daily","translation":"我在银行遇见她。"}]}]}]}';
+  ta.style.marginTop = "10px";
+  c.appendChild(ta);
+  const types = el("div", "row wrap small"); types.style.cssText = "gap:12px;margin-top:10px";
+  types.innerHTML = '<span class="muted">自动生成卡片类型：</span>' +
+    [["meaning", "词义卡", true], ["form", "词形卡", true], ["production", "产出卡", false], ["listening", "听力卡", false]]
+      .map(([k, n, on]) => '<label><input type="checkbox" data-t="' + k + '"' + (on ? " checked" : "") + "> " + n + "</label>").join("");
+  c.appendChild(types);
+  const go1 = el("button", "btn primary block lg", "解析并入库"); go1.style.marginTop = "12px";
+  go1.onclick = async () => {
+    const txt = ta.value.trim(); if (!txt) { toast("先粘贴内容或选择文件"); return; }
+    let norm;
+    try { norm = txt.trim()[0] === "[" || txt.trim()[0] === "{" ? parseImportJSON(txt) : normalizeImport(parseImportCSV(txt)); }
+    catch (e) { toast("解析失败：" + e.message); return; }
+    const picked = Array.from(types.querySelectorAll("input")).filter((x) => x.checked).map((x) => x.dataset.t);
+    await doImport(norm, "入库完成", { types: picked });
+  };
+  c.appendChild(go1);
+  v.appendChild(c);
+
+  const s2 = el("div", "sec"); s2.style.marginTop = "16px";
+  s2.innerHTML = '<div class="sec-title">导出 <span class="hint">数据可携带 · 开放格式</span></div>';
+  const c2 = el("div", "card row wrap"); c2.style.cssText = "padding:14px;gap:8px";
+  const b1 = el("button", "btn", "导出全量 JSON（可回导）");
+  b1.onclick = async () => { const d = await exportAllJSON(); download("recall-backup-" + dayKey(now()) + ".json", JSON.stringify(d, null, 1), "application/json"); toast("已导出"); };
+  const b2 = el("button", "btn", "导出学习记录 CSV");
+  b2.onclick = () => { download("recall-logs-" + dayKey(now()) + ".csv", logsToCSV(S.cache.logs), "text/csv"); toast("已导出 " + S.cache.logs.length + " 条记录"); };
+  const b3 = el("button", "btn ghost", "导出词表 CSV（简单）");
+  b3.onclick = () => {
+    const rows = [["lemma", "pos", "freq", "concrete", "anchor_l1", "anchor_l2", "e1", "t1", "e2", "t2", "e3", "t3"]];
+    S.cache.words.forEach((w) => idx.sensesOfWord(w.word_id).forEach((s) => {
+      const ss = idx.sentencesOf(s.sense_id);
+      const r = [w.lemma, w.pos, w.frequency_band, w.concreteness, s.anchor_l1, s.anchor_l2];
+      for (let i = 0; i < 3; i++) { r.push(ss[i] ? ss[i].text : ""); r.push(ss[i] ? ss[i].topic_tag : ""); }
+      rows.push(r);
+    }));
+    const q = (x) => '"' + String(x).replace(/"/g, '""') + '"';
+    download("recall-words-" + dayKey(now()) + ".csv", "\ufeff" + rows.map((r) => r.map(q).join(",")).join("\n"), "text/csv");
+  };
+  c2.appendChild(b1); c2.appendChild(b2); c2.appendChild(b3);
+  s2.appendChild(c2); v.appendChild(s2);
+
+  const s3 = el("div", "sec");
+  s3.innerHTML = '<div class="sec-title">入库规则 <span class="hint">违反者标记「内容待补」，不静默放行</span></div>';
+  const c3 = el("div", "card"); c3.style.padding = "12px 14px";
+  c3.innerHTML = '<ul class="small muted" style="margin:0;padding-left:18px">' +
+    "<li>每个义项必须且只能有一个锚定义（单义项原则，EV-10）</li>" +
+    "<li>每个义项 3–5 条例句，topic_tag 去重 ≥3 个，否则标记「内容待补」</li>" +
+    "<li>例句 difficulty 超过设定位的默认不参与轮换（可理解性门槛）</li>" +
+    "<li>同一义项连续两次复习不会展示同一条例句（7.4 轮换算法）</li></ul>";
+  s3.appendChild(c3); v.appendChild(s3);
+}
+async function doImport(norm, msg, opts) {
+  const r = await commitImport(norm, opts);
+  await refreshCache(); await updateTopChips();
+  let t = msg + "：词条 " + r.words + " · 义项 " + r.senses + " · 例句 " + r.sentences + " · 卡片 " + r.cards;
+  const flags = r.flagged || [];
+  if (flags.length) {
+    modal("入库结果（含内容待补）", el("div", null,
+      "<p class=small>已入库 <b>" + r.senses + "</b> 个义项，其中 " + flags.length + " 个标记为「内容待补」，需要补录才能发挥语境多样性收益：</p>" +
+      flags.slice(0, 40).map((x) => '<div class="small">· <b>' + esc(x.lemma) + "</b> 义项#" + x.sense + "：" + esc(x.reason) + "</div>").join("") +
+      (flags.length > 40 ? '<div class="tiny muted">…还有 ' + (flags.length - 40) + " 条</div>" : "")), [{ t: "知道了", p: true }]);
+  } else toast(t);
+  go("home");
+}
+
+/* ==========================================================================
+   10. M9 数据统计
+   ========================================================================== */
+function activeCards() { return S.cache.cards.filter((c) => c.reps > 0 || c.introduced_at); }
+function masteryDistribution() {
+  const arr = [0, 0, 0, 0];
+  S.cache.cards.forEach((c) => { arr[c.mastery || 0]++; });
+  return arr.map((n, i) => ({ k: MASTERY[i].k, n: n, nm: MASTERY[i].n }));
+}
+/** 接受性（听读）vs 产出性（说写）知识占比 FR-M9-01 */
+function receptiveSplit(scopeCards) {
+  const cards = scopeCards || S.cache.cards;
+  let rec = 0, pro = 0, recR = 0, proR = 0;
+  cards.forEach((c) => {
+    const t = CARD_TYPES[c.card_type] || CARD_TYPES.meaning;
+    if (t.receptive) { rec++; if ((c.mastery || 0) >= 2) recR++; }
+    else { pro++; if ((c.mastery || 0) >= 2) proR++; }
+  });
+  return { rec, pro, recR, proR, recRate: rec ? recR / rec : 0, proRate: pro ? proR / pro : 0 };
+}
+/** 延迟保持率：距上次复习 ≥N 天且期间无复习的那次提取的正确率 */
+function delayedRetention(days) {
+  let n = 0, ok = 0;
+  S.cache.logs.forEach((l) => {
+    if ((l.mode || "regular") !== "regular") return;
+    if (l.elapsed_days != null && l.elapsed_days >= days) { n++; if (l.jol > 0) ok++; }
+  });
+  return { n: n, rate: n ? ok / n : null, ok: ok };
+}
+function firstDaySuccess() {
+  const firsts = new Map();
+  S.cache.logs.forEach((l) => { if (!firsts.has(l.card_id)) firsts.set(l.card_id, l); });
+  let n = 0, ok = 0;
+  firsts.forEach((l) => { n++; if (l.jol > 0) ok++; });
+  return { n: n, rate: n ? ok / n : null };
+}
+function efficiency() {
+  const m3 = new Set(S.cache.logs.filter((l) => l.mastery_after === 3).map((l) => l.card_id)).size;
+  const ms = S.cache.logs.reduce((a, l) => a + (l.total_ms || 0), 0);
+  return { m3: m3, hours: ms / 3600000, perHour: ms > 0 ? m3 / (ms / 3600000) : null };
+}
+function computeHealth() {
+  const r7 = delayedRetention(7), r30 = delayedRetention(30), fd = firstDaySuccess();
+  return { retention7: r7.rate, r7n: r7.n, retention30: r30.rate, r30n: r30.n, firstDaySuccess: fd.rate, firstDayN: fd.n };
+}
+function rtCurve() {
+  const byRep = {};
+  const order = {};
+  S.cache.logs.forEach((l) => {
+    order[l.card_id] = (order[l.card_id] || 0) + 1;
+    const k = Math.min(8, order[l.card_id]);
+    (byRep[k] = byRep[k] || []).push(l.rt_ms);
+  });
+  return [1, 2, 3, 4, 5, 6, 7, 8].map((k) => ({
+    k: k, n: (byRep[k] || []).length,
+    mean: (byRep[k] && byRep[k].length) ? byRep[k].reduce((a, b) => a + b, 0) / byRep[k].length : null,
+    median: (byRep[k] && byRep[k].length) ? median(byRep[k]) : null
+  }));
+}
+function median(a) { const b = a.slice().sort((x, y) => x - y); const m = Math.floor(b.length / 2); return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; }
+
+function renderStats() {
+  const v = $("view");
+  v.innerHTML = '<div class="sec-title">效果验证指标 <span class="hint">刻意避开「累计学习词数」这类虚荣指标</span></div>';
+  const dist = masteryDistribution(), rs = receptiveSplit(), health = computeHealth(), eff = efficiency();
+  const c1 = el("div", "grid3");
+  c1.innerHTML =
+    statCard(health.retention7 == null ? "—" : pct(health.retention7), "7 天延迟保持率", "上次复习 ≥7 天后的提取成功率", health.r7n) +
+    statCard(health.retention30 == null ? "—" : pct(health.retention30), "30 天延迟保持率（北极星）", "≥30 天后的产出回忆率", health.r30n) +
+    statCard(health.firstDaySuccess == null ? "—" : pct(health.firstDaySuccess), "首日提取成功率", "健康度目标 >70%", health.firstDayN);
+  v.appendChild(c1);
+  const def = el("div", "card small muted"); def.style.cssText = "padding:10px 12px;margin-top:2px";
+  def.innerHTML = "<b>口径说明</b>：延迟保持率 = 「距上次复习间隔 ≥N 天」的那次提取中，自评非「想不起来」的比例；产出回忆率按接受性/产出性卡片分别统计，不把「认得」算作掌握。";
+  v.appendChild(def);
+
+  const s2 = el("div", "sec"); s2.style.marginTop = "16px";
+  s2.innerHTML = '<div class="sec-title">掌握度分布 <span class="hint">M0 不认识 / M1 认得 / M2 想得起 / M3 想得快</span></div>';
+  const c2 = el("div", "card"); c2.style.padding = "14px 16px";
+  const tot = dist.reduce((a, b) => a + b.n, 0) || 1;
+  c2.innerHTML = dist.map((d, i) =>
+    '<div class="row" style="margin-bottom:8px"><span class="mtag ' + MASTERY[i].cls + '" style="min-width:78px;justify-content:center">' + d.k + " " + d.nm + "</span>" +
+    '<div class="bar" style="flex:1"><i style="width:' + (d.n / tot * 100) + "%;background:" + ["#b3261e", "#a16207", "#2563eb", "#15803d"][i] + '"></i></div>' +
+    '<span class="small" style="min-width:62px;text-align:right">' + d.n + " 张 · " + pct(d.n / tot) + "</span></div>").join("") +
+    '<div class="divider"></div>' +
+    '<div class="grid2"><div class="stat"><div class="v" style="font-size:18px">' + pct(rs.recRate) + '</div><div class="k">接受性知识达标率（M2+）</div><div class="n">' + rs.recR + " / " + rs.rec + " 张卡</div></div>" +
+    '<div class="stat"><div class="v" style="font-size:18px">' + pct(rs.proRate) + '</div><div class="k">产出性知识达标率（M2+）</div><div class="n">' + rs.proR + " / " + rs.pro + " 张卡</div></div></div>";
+  s2.appendChild(c2); v.appendChild(s2);
+
+  const s3 = el("div", "sec");
+  s3.innerHTML = '<div class="sec-title">反应时曲线 <span class="hint">同一词的 RT 随复习次数应单调下降</span></div>';
+  const c3 = el("div", "card"); c3.style.padding = "14px 16px";
+  const cv = el("canvas", "chart"); cv.width = 700; cv.height = 220; cv.id = "rtchart";
+  c3.appendChild(cv);
+  const rows = rtCurve().filter((r) => r.n > 0);
+  if (rows.length < 2) c3.appendChild(el("div", "tiny muted", "样本不足（需要同一张卡片多次复习），先积累几天数据。"));
+  else {
+    const tbl = el("table", "tbl");
+    tbl.innerHTML = "<tr><th>第 N 次复习</th>" + rows.map((r) => "<th>" + r.k + "</th>").join("") + "</tr>" +
+      "<tr><td>平均 RT</td>" + rows.map((r) => "<td>" + fmtDur(r.mean) + "</td>").join("") + "</tr>" +
+      "<tr><td>中位 RT</td>" + rows.map((r) => "<td>" + fmtDur(r.median) + "</td>").join("") + "</tr>" +
+      "<tr><td>样本数</td>" + rows.map((r) => "<td>" + r.n + "</td>").join("") + "</tr>";
+    c3.appendChild(tbl);
+  }
+  s3.appendChild(c3); v.appendChild(s3);
+  drawRTChart(rows);
+
+  const s4 = el("div", "sec");
+  s4.innerHTML = '<div class="sec-title">效率 <span class="hint">含回忆窗口与反馈阅读的全部交互耗时</span></div>';
+  const c4 = el("div", "grid3");
+  c4.innerHTML = statCard(eff.m3, "达成 M3 的卡片", "真正算「想得快」的") +
+    statCard(fmtDur(S.cache.logs.reduce((a, l) => a + (l.total_ms || 0), 0)), "累计交互耗时", "含强制回忆窗口") +
+    statCard(eff.perHour == null ? "—" : (Math.round(eff.perHour * 10) / 10), "单位时间掌握词数", "达成 M3 词数 / 小时");
+  s4.appendChild(c4); v.appendChild(s4);
+
+  const s5 = el("div", "sec row wrap"); s5.style.gap = "8px";
+  const be = el("button", "btn", "导出学习记录 CSV"); be.onclick = () => download("recall-logs-" + dayKey(now()) + ".csv", logsToCSV(S.cache.logs), "text/csv");
+  const bj = el("button", "btn", "导出全量 JSON"); bj.onclick = async () => download("recall-backup-" + dayKey(now()) + ".json", JSON.stringify(await exportAllJSON(), null, 1), "application/json");
+  s5.appendChild(be); s5.appendChild(bj); v.appendChild(s5);
+}
+function drawRTChart(rows) {
+  const cv = $("rtchart"); if (!cv || rows.length < 2) return;
+  const g = cv.getContext("2d"), W = cv.width, H = cv.height, P = 34;
+  g.clearRect(0, 0, W, H);
+  const max = Math.max.apply(null, rows.map((r) => r.median || 0)) * 1.25 || 1;
+  g.strokeStyle = "#e2e6ec"; g.lineWidth = 1; g.font = "11px sans-serif"; g.fillStyle = "#8b95a3";
+  for (let i = 0; i <= 4; i++) {
+    const y = P + (H - 2 * P) * i / 4;
+    g.beginPath(); g.moveTo(P, y); g.lineTo(W - P, y); g.stroke();
+    g.fillText(fmtDur(max * (1 - i / 4)), 2, y + 4);
+  }
+  rows.forEach((r, i) => { const x = P + (W - 2 * P) * i / (rows.length - 1); g.fillText("" + r.k, x - 3, H - P + 16); });
+  g.beginPath(); g.strokeStyle = "#2563eb"; g.lineWidth = 2.4;
+  rows.forEach((r, i) => {
+    const x = P + (W - 2 * P) * i / (rows.length - 1), y = P + (H - 2 * P) * (1 - (r.median || 0) / max);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  });
+  g.stroke();
+  rows.forEach((r, i) => {
+    const x = P + (W - 2 * P) * i / (rows.length - 1), y = P + (H - 2 * P) * (1 - (r.median || 0) / max);
+    g.fillStyle = "#2563eb"; g.beginPath(); g.arc(x, y, 3.4, 0, 7); g.fill();
+  });
+}
+
+/* ==========================================================================
+   11. M10 设置与偏好 · M4 档位自测
+   ========================================================================== */
+function renderSettings() {
+  const v = $("view"), st = settings();
+  v.innerHTML = "";
+  // 档位
+  const s0 = el("div", "sec");
+  s0.innerHTML = '<div class="sec-title">用户档位 <span class="hint">全局可自由切换，随时切回来，不锁定不降级</span></div>';
+  Object.keys(BANDS).forEach((k) => {
+    const b = BANDS[k];
+    const it = el("div", "opt");
+    it.style.marginBottom = "8px";
+    it.className = "opt" + (st.band === k ? " on" : "");
+    it.innerHTML = '<div><div class="t">' + b.name + '</div><div class="d">' + b.desc + " · 默认：" + b.def + " · " + b.img + "</div></div>";
+    const btn = el("button", "btn sm", st.band === k ? "当前" : "切换到此档");
+    btn.disabled = st.band === k;
+    btn.onclick = () => switchBand(k);
+    it.appendChild(btn); s0.appendChild(it);
+  });
+  const note = el("div", "tiny muted", "切换即时生效于<b>后续新学词条</b>；已学词条保留原有释义语言，不会被批量重置（1.2 节）。如需同步到已有卡片，见下方「应用到已有卡片」。");
+  note.style.marginTop = "6px"; s0.appendChild(note); v.appendChild(s0);
+  const applyRow = el("div", "row wrap"); applyRow.style.gap = "8px";
+  const ap = el("button", "btn sm", "把当前档位默认应用到已有卡片（手动）");
+  ap.onclick = async () => {
+    if (!confirm("会把所有已有卡片的释义语言重置为当前档位矩阵默认值，覆盖会丢失。继续？")) return;
+    for (const c of S.cache.cards) { const w = idx.word(c.word_id), s = idx.sense(c.sense_id); if (w) { c.gloss_mode = matrixAt(st.band, wordClassOf(w, s)); await DB.put("cards", c); } }
+    await refreshCache(); toast("已应用到 " + S.cache.cards.length + " 张卡片");
+  };
+  applyRow.appendChild(ap); s0.appendChild(applyRow);
+
+  // 提取交互
+  const s1 = el("div", "sec");
+  s1.innerHTML = '<div class="sec-title">提取交互 <span class="hint">FR-M3-01 / M10-01</span></div>';
+  const c1 = el("div", "card"); c1.style.padding = "14px 16px";
+  c1.innerHTML = '<div class="fld-row"><label class="fld">强制回忆窗口（默认 2 秒）</label></div>';
+  const seg = el("div", "seg");
+  [2000, 4000, 8000].forEach((ms) => {
+    const b = el("button", st.recallWindowMs === ms ? "on" : "", ms / 1000 + " 秒");
+    b.onclick = async () => { await saveSettings({ recallWindowMs: ms }); renderSettings(); toast("已生效于下一张卡片"); };
+    seg.appendChild(b);
+  });
+  c1.appendChild(seg);
+  c1.appendChild(el("div", "tiny muted", "窗口期内答案区不可见，「先偷看再自评」的路径在 UI 上不存在。"));
+  s1.appendChild(c1); v.appendChild(s1);
+
+  // 每日负载
+  const s2 = el("div", "sec");
+  s2.innerHTML = '<div class="sec-title">每日负载控制 <span class="hint">FR-M2-06 / M10-02</span></div>';
+  const c2 = el("div", "card"); c2.style.padding = "14px 16px";
+  c2.innerHTML = '<div class="grid2"><div class="fld-row"><label class="fld">每日新词上限</label><input type="number" id="s_new" min="0" max="200" value="' + st.dailyNewLimit + '"></div>' +
+    '<div class="fld-row"><label class="fld">每日复习总量上限</label><input type="number" id="s_rev" min="10" max="1000" value="' + st.dailyReviewLimit + '"></div></div>';
+  s2.appendChild(c2); v.appendChild(s2);
+
+  // 睡前 / 免打扰
+  const s3 = el("div", "sec");
+  s3.innerHTML = '<div class="sec-title">睡前巩固与提醒 <span class="hint">FR-M7 / M10-04</span></div>';
+  const c3 = el("div", "card"); c3.style.padding = "14px 16px";
+  c3.innerHTML =
+    '<div class="row wrap" style="gap:10px"><label class="row small"><input type="checkbox" id="s_sleep"' + (st.sleep.enabled ? " checked" : "") + "> 启用睡前队列</label>" +
+    '<label class="row small"><input type="checkbox" id="s_dnd"' + (st.dnd.enabled ? " checked" : "") + "> 启用免打扰</label></div>" +
+    '<div class="grid2" style="margin-top:10px"><div class="fld-row"><label class="fld">睡前时段开始</label><input type="number" id="s_sh" min="18" max="23" value="' + st.sleep.startHour + '"></div>' +
+    '<div class="fld-row"><label class="fld">睡前时段结束</label><input type="number" id="s_se" min="19" max="24" value="' + st.sleep.endHour + '"></div>' +
+    '<div class="fld-row"><label class="fld">单轮目标时长（分钟）</label><input type="number" id="s_sm" min="2" max="20" value="' + st.sleep.targetMin + '"></div>' +
+    '<div class="fld-row"><label class="fld">免打扰开始 / 结束</label><div class="row"><input type="number" id="s_dh" min="0" max="23" value="' + st.dnd.startHour + '"><input type="number" id="s_de" min="1" max="23" value="' + st.dnd.endHour + '"></div></div></div>' +
+    '<div class="tiny muted">睡前队列只含当日已提取过的词、不含新词；完成一轮后不追加任务。</div>';
+  s3.appendChild(c3); v.appendChild(s3);
+
+  // 释义矩阵
+  const s4 = el("div", "sec");
+  s4.innerHTML = '<div class="sec-title">释义语言矩阵 <span class="hint">后台可配置，无需发版 · FR-M4-02</span></div>';
+  const c4 = el("div", "card"); c4.style.padding = "12px 14px";
+  let html = '<table class="tbl"><tr><th>档位 ＼ 词类</th>' + WORD_CLASSES.map((c) => "<th>" + c[1] + "</th>").join("") + "</tr>";
+  Object.keys(BANDS).forEach((b) => {
+    html += "<tr><th>" + b + "</th>" + WORD_CLASSES.map((wc) => {
+      const cur = matrixAt(b, wc[0]);
+      return '<td><select data-b="' + b + '" data-c="' + wc[0] + '">' +
+        Object.keys(GLOSS_MODES).map((k) => '<option value="' + k + '"' + (k === cur ? " selected" : "") + ">" + GLOSS_MODES[k] + "</option>").join("") +
+        "</select></td>";
+    }).join("") + "</tr>";
+  });
+  html += "</table>";
+  c4.innerHTML = html;
+  s4.appendChild(c4); v.appendChild(s4);
+
+  // RT 阈值 + 无障碍
+  const s5 = el("div", "sec");
+  s5.innerHTML = '<div class="sec-title">「想得快」RT 阈值与无障碍 <span class="hint">按档位分别配置</span></div>';
+  const c5 = el("div", "card"); c5.style.padding = "12px 14px";
+  c5.innerHTML = '<div class="grid4">' + Object.keys(BANDS).map((b) =>
+    '<div class="mrow"><label class="fld">' + b + " 阈值(ms)</label><input type=\"number\" data-rt=\"" + b + "\" min=\"1000\" max=\"30000\" step=\"500\" value=\"" + st.rtThresholdMs[b] + '"></div>').join("") + "</div>" +
+    '<div class="fld-row"><label class="fld">字号缩放 ' + st.fontScale.toFixed(2) + "×</label><input type=\"range\" id=\"s_font\" min=\"0.85\" max=\"1.6\" step=\"0.05\" value=\"" + st.fontScale + '"></div>' +
+    '<div class="tiny muted">掌握度、状态均有文字标签，不依赖颜色单独传达信息。</div>';
+  s5.appendChild(c5); v.appendChild(s5);
+
+  // 高级
+  const s6 = el("div", "sec");
+  s6.innerHTML = '<div class="sec-title">高级配置 <span class="hint">调度策略层与 FSRS 层可独立调整，便于灰度与回滚</span></div>';
+  const c6 = el("div", "card"); c6.style.padding = "12px 14px";
+  c6.innerHTML =
+    '<div class="grid2">' +
+    '<div class="fld-row"><label class="fld">请求保留率</label><input type="number" id="s_ret" step="0.01" min="0.7" max="0.99" value="' + st.requestRetention + '"></div>' +
+    '<div class="fld-row"><label class="fld">最大间隔(天)</label><input type="number" id="s_maxi" min="30" max="3650" value="' + st.maximumIntervalDays + '"></div>' +
+    '<div class="fld-row"><label class="fld">放行前连续成功次数</label><input type="number" id="s_rel" min="2" max="3" value="' + st.releaseStreak + '"></div>' +
+    '<div class="fld-row"><label class="fld">M1 间隔增长上限</label><input type="number" id="s_cap" step="0.05" min="0" max="1" value="' + st.m1GrowthCap + '"></div>' +
+    '<div class="fld-row"><label class="fld">交错练习解锁掌握度</label><input type="number" id="s_ilv" min="0" max="3" value="' + st.interleaveMastery + '"></div>' +
+    '<div class="fld-row"><label class="fld">选择题占比上限</label><input type="number" id="s_mcq" step="0.05" min="0" max="0.29" value="' + st.mcqMaxRatio + '"></div>' +
+    '<div class="fld-row"><label class="fld">例句难度上限(1-5)</label><input type="number" id="s_diff" min="1" max="5" value="' + st.sentenceDifficultyMax + '"></div>' +
+    '<div class="fld-row"><label class="fld">FSRS 参数（19 个，英文逗号分隔）</label><textarea id="s_fsrs" rows="3">' + esc(st.fsrsParams.join(",")) + "</textarea></div>" +
+    "</div>" +
+    '<div class="row wrap" style="gap:8px"><label class="row small"><input type="checkbox" id="s_fuzz"' + (st.fsrsFuzz ? ' checked' : '') + "> FSRS 模糊化抖动</label>" +
+    '<button class="btn sm ghost" id="s_resetf">恢复 FSRS 官方默认参数</button></div>';
+  s6.appendChild(c6); v.appendChild(s6);
+
+  // 软更新（Route B：本地壳 + 远程 UI）
+  const sU = el("div", "sec");
+  sU.innerHTML = '<div class="sec-title">界面软更新 <span class="hint">换内容不用重装 APK</span></div>';
+  const cU = el("div", "card"); cU.style.padding = "14px 16px";
+  const cacheInfo = readUiCache();
+  cU.innerHTML =
+    '<div class="row wrap small" style="gap:8px">' +
+    '<span class="badge">内置 ' + esc(APP_VERSION) + "</span>" +
+    (cacheInfo ? '<span class="badge ok">缓存 ' + esc(cacheInfo.version) + "</span>" : '<span class="badge">无缓存</span>') +
+    (settings().uiRemoteVersion ? '<span class="badge">线上 ' + esc(settings().uiRemoteVersion) + "</span>" : "") +
+    (settings().uiLastChecked ? '<span class="badge">上次检查 ' + new Date(settings().uiLastChecked).toLocaleString("zh-CN", { hour12: false }) + "</span>" : "") +
+    "</div>" +
+    '<div class="fld-row" style="margin-top:10px"><label class="fld">更新清单 URL（放 index.html 与 version.json 的那个地址）</label>' +
+    '<input type="text" id="s_manifest" placeholder="https://&lt;用户名&gt;.github.io/recall/version.json" value="' + esc(settings().uiManifestUrl || "") + '"></div>' +
+    '<div class="row small"><label class="row"><input type="checkbox" id="s_uiru"' + (settings().uiRemoteUpdate !== false ? " checked" : "") + "> 启动时自动检查更新</label></div>" +
+    '<div class="tiny muted" style="margin-top:6px">机制：APK 只装一个壳；启动时按清单拉最新版页面缓存到本地，' +
+    '下次启动用缓存重建界面。清掉缓存即回落内置版本，天然支持回滚。学习数据在 IndexedDB，换界面不会动数据。</div>';
+  sU.appendChild(cU);
+  const rowU = el("div", "row wrap"); rowU.style.gap = "8px";
+  const bChk = el("button", "btn sm", "立即检查");
+  bChk.onclick = async () => {
+    bChk.disabled = true; bChk.textContent = "检查中…";
+    const r = await checkUiUpdate({ force: true });
+    bChk.disabled = false; bChk.textContent = "立即检查";
+    const msg = { current: "已是最新（" + APP_VERSION + "）", cached: "已是最新缓存版本", "no-url": "还没填清单 URL", disabled: "自动更新已关闭", ignored: "已缓存但被忽略，用「立即应用」", ready: "已下载新版本，可立即应用", "too-big": "页面太大未缓存", "cache-fail": "缓存写入失败", error: "检查失败：" + (r.message || "") }[r.status] || r.status;
+    toast(msg);
+    if (r.status === "ready") { showUpdateBanner(r); renderSettings(); }
+  };
+  const bApp = el("button", "btn sm", "立即应用缓存版本");
+  bApp.disabled = !cacheInfo;
+  bApp.onclick = () => { if (cacheInfo && confirm("立即用缓存的 " + cacheInfo.version + " 重建界面？")) applyUiCache(); };
+  const bClr = el("button", "btn sm ghost", "清除缓存 UI（回到内置版）");
+  bClr.disabled = !cacheInfo;
+  bClr.onclick = () => { clearUiCache(); toast("已清除，下次启动回到内置 " + APP_VERSION); renderSettings(); };
+  rowU.appendChild(bChk); rowU.appendChild(bApp); rowU.appendChild(bClr);
+  sU.appendChild(rowU);
+  v.appendChild(sU);
+  $("s_uiru").onchange = async () => { await saveSettings({ uiRemoteUpdate: $("s_uiru").checked }); toast("已保存"); };
+  $("s_manifest").onchange = async () => { await saveSettings({ uiManifestUrl: $("s_manifest").value.trim() }); toast("清单地址已保存"); };
+
+  // 数据 & 关于
+  const s7 = el("div", "sec row wrap"); s7.style.gap = "8px";
+  const bTest = el("button", "btn", "运行算法自检");
+  bTest.onclick = async () => { const r = await runSelfTest(); showSelfTest(r); };
+  const bVst = el("button", "btn", "词汇量自测 / 重新推荐档位");
+  bVst.onclick = () => openVocabTest();
+  const bExp = el("button", "btn", "导出全量备份");
+  bExp.onclick = async () => download("recall-backup-" + dayKey(now()) + ".json", JSON.stringify(await exportAllJSON(), null, 1), "application/json");
+  const bWipe = el("button", "btn ghost", "清空所有数据");
+  bWipe.onclick = async () => {
+    if (!confirm("将删除本机全部词条、卡片、学习记录与助记，不可恢复。建议先导出备份。确定？")) return;
+    for (const s of ["words", "senses", "sentences", "cards", "logs", "mnemonics", "history"]) await DB.tx([s], "readwrite").then((t) => new Promise((r) => { t.objectStore(s).clear(); t.oncomplete = () => r(); }));
+    await refreshCache(); toast("已清空"); go("home");
+  };
+  s7.appendChild(bTest); s7.appendChild(bVst); s7.appendChild(bExp); s7.appendChild(bWipe);
+  v.appendChild(s7);
+  const about = el("div", "tiny muted");
+  about.innerHTML = "Recall · 依据《单词记忆软件功能规格文档 v1.0》实现 MVP(P0) + v1.1(P1)。调度内核：FSRS-5（开源，19 参数）＋ 教学约束层（7.3）。";
+  about.style.marginTop = "10px"; v.appendChild(about);
+
+  // 事件绑定
+  const bind = (id, key, num) => {
+    const e = $(id); if (!e) return;
+    e.onchange = async () => { await saveSettings({ [key]: num ? Number(e.value) : e.value }); updateTopChips(); toast("已保存"); };
+  };
+  bind("s_new", "dailyNewLimit", true); bind("s_rev", "dailyReviewLimit", true);
+  $("s_sleep").onchange = async () => { await saveSettings({ sleep: Object.assign({}, st.sleep, { enabled: $("s_sleep").checked }) }); };
+  $("s_dnd").onchange = async () => { await saveSettings({ dnd: Object.assign({}, st.dnd, { enabled: $("s_dnd").checked }) }); };
+  const sleepNum = () => saveSettings({ sleep: Object.assign({}, settings().sleep, { startHour: clamp(Number($("s_sh").value), 18, 23), endHour: clamp(Number($("s_se").value), 19, 24), targetMin: clamp(Number($("s_sm").value), 2, 20) }) });
+  ["s_sh", "s_se", "s_sm"].forEach((id) => ($(id).onchange = sleepNum));
+  ["s_dh", "s_de"].forEach((id) => ($(id).onchange = () => saveSettings({ dnd: Object.assign({}, settings().dnd, { startHour: clamp(Number($("s_dh").value), 0, 23), endHour: clamp(Number($("s_de").value), 1, 23) }) })));
+  $("s_font").oninput = () => { document.documentElement.style.setProperty("--fs", $("s_font").value); };
+  $("s_font").onchange = async () => { await saveSettings({ fontScale: Number($("s_font").value) }); };
+  ["s_ret", "s_maxi", "s_rel", "s_cap", "s_ilv", "s_mcq", "s_diff"].forEach((id) => {
+    $(id).onchange = async () => {
+      const m = { s_ret: "requestRetention", s_maxi: "maximumIntervalDays", s_rel: "releaseStreak", s_cap: "m1GrowthCap", s_ilv: "interleaveMastery", s_mcq: "mcqMaxRatio", s_diff: "sentenceDifficultyMax" };
+      const v2 = Number($(id).value);
+      if (m[id] === "releaseStreak") await saveSettings({ releaseStreak: clamp(v2, 2, 3) });
+      else if (m[id] === "interleaveMastery") await saveSettings({ interleaveMastery: clamp(v2, 0, 3) });
+      else await saveSettings({ [m[id]]: v2 });
+      toast("已保存");
+    };
+  });
+  $("s_fuzz").onchange = async () => { await saveSettings({ fsrsFuzz: $("s_fuzz").checked }); FSRS.fuzz = $("s_fuzz").checked; };
+  $("s_resetf").onclick = async () => { await saveSettings({ fsrsParams: FSRS_DEFAULTS.slice() }); FSRS.w = FSRS_DEFAULTS.slice(); renderSettings(); toast("已恢复官方默认参数"); };
+  $("s_fsrs").onchange = async () => {
+    const arr = $("s_fsrs").value.split(/[,\s]+/).map(Number).filter((x) => isFinite(x));
+    if (arr.length !== 19) { toast("需要 19 个参数，当前 " + arr.length); return; }
+    await saveSettings({ fsrsParams: arr }); FSRS.w = arr.slice(); toast("参数已更新");
+  };
+  c4.querySelectorAll("select").forEach((s) => {
+    s.onchange = async () => {
+      const m = JSON.parse(JSON.stringify(settings().glossMatrix || DEFAULT_GLOSS_MATRIX));
+      m[s.dataset.b][s.dataset.c] = s.value;
+      await saveSettings({ glossMatrix: m }); toast("矩阵已更新，影响后续新学词条");
+    };
+  });
+  c5.querySelectorAll("[data-rt]").forEach((e) => {
+    e.onchange = async () => {
+      const t2 = Object.assign({}, settings().rtThresholdMs); t2[e.dataset.rt] = Number(e.value);
+      await saveSettings({ rtThresholdMs: t2 }); toast(e.dataset.rt + " 阈值已更新");
+    };
+  });
+}
+const FSRS_DEFAULTS = [0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575,
+  0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621];
+
+async function switchBand(k) {
+  await saveSettings({ band: k, bandPromptIgnored: Object.assign({}, settings().bandPromptIgnored, {}) });
+  S.profile.level_band = k; await DB.kv.set("profile", S.profile);
+  updateTopChips(); renderSettings();
+  toast("已切换至 " + BANDS[k].name + "：即时生效于后续新学词条");
+}
+
+/* ---------- FR-M4-01 词汇量自测 → 推荐默认档位（可即时更改，非固定分层） ---------- */
+const VST_ITEMS = [
+  ["see", "看见；理解", 1], ["make", "做；制造", 1], ["take", "拿；取", 1], ["water", "水", 1],
+  ["house", "房子", 1], ["work", "工作", 1], ["friend", "朋友", 1], ["money", "钱", 1],
+  ["allow", "允许", 2], ["damage", "损害；损坏", 2], ["refuse", "拒绝", 2], ["benefit", "益处；获益", 2],
+  ["curious", "好奇的", 2], ["prevent", "阻止", 2], ["election", "选举", 2], ["injury", "伤害；负伤", 2],
+  ["manner", "方式；举止", 3], ["adequate", "足够的；胜任的", 3], ["nevertheless", "尽管如此", 3], ["reluctant", "不情愿的", 3],
+  ["accumulate", "积累；积聚", 3], ["appliance", "器具；家用电器", 3], ["concise", "简明的", 3], ["delegate", "委派；代表", 3],
+  ["ambiguous", "模棱两可的", 4], ["compel", "强迫；迫使", 4], ["elaborate", "详尽阐述；精心制作的", 4], ["hypothetical", "假设的", 4],
+  ["intervene", "介入；干预", 4], ["mandatory", "强制的", 4], ["plausible", "貌似合理的", 4], ["rudimentary", "基本的；初步的", 4],
+  ["aberrant", "异常的；脱离常规的", 5], ["cacophony", "刺耳的嘈杂声", 5], ["deleterious", "有害的", 5], ["ephemeral", "短暂的", 5],
+  ["idiosyncratic", "特有的；个人特有的", 5], ["obfuscate", "使困惑；故意混淆", 5], ["quintessential", "最典型的；精华的", 5], ["tangential", "离题的；切线的", 5]
+];
+const VST_WEIGHTS = [1000, 1000, 1000, 1000, 4000];
+function openVocabTest() {
+  const items = VST_ITEMS.map((it, i) => {
+    const pool = VST_ITEMS.filter((x, j) => j !== i);
+    const opts = shuffle(pool.slice()).slice(0, 3).map((x) => x[1]);
+    opts.push(it[1]); shuffle(opts);
+    return { word: it[0], answer: it[1], band: it[2], opts: opts };
+  });
+  const body = el("div");
+  const head = el("div", "small muted", "选出与左边单词相符的意思。共 " + items.length + " 题， stratified 按 5 个词频段抽样；这是<b>分班估计</b>，结果不计入学习进度。");
+  body.appendChild(head);
+  const list = el("div"); list.style.marginTop = "8px";
+  const picks = {};
+  items.forEach((it, i) => {
+    const box = el("div", "card"); box.style.cssText = "padding:10px;margin-bottom:8px;box-shadow:none";
+    box.innerHTML = '<div><b>' + esc(it.word) + '</b></div>';
+    it.opts.forEach((o) => {
+      const b = el("button", "btn sm block", esc(o));
+      b.style.cssText = "text-align:left;margin-top:5px";
+      b.onclick = () => { picks[i] = o; box.querySelectorAll("button").forEach((x) => (x.className = "btn sm block")); b.className = "btn sm block primary"; };
+      box.appendChild(b);
+    });
+    list.appendChild(box);
+  });
+  body.appendChild(list);
+  modal("词汇量自测（约 3 分钟）", body, [
+    { t: "取消" },
+    { t: "提交并推荐档位", p: true, fn: () => {
+        const correct = [0, 0, 0, 0, 0], total = [0, 0, 0, 0, 0];
+        items.forEach((it, i) => { total[it.band - 1]++; if (picks[i] === it.answer) correct[it.band - 1]++; });
+        let est = 0;
+        for (let b = 0; b < 5; b++) est += VST_WEIGHTS[b] * (correct[b] / (total[b] || 1));
+        est = Math.round(est / 50) * 50;
+        const band = est < 2000 ? "L1" : est < 4000 ? "L2" : est < 8000 ? "L3" : "L4";
+        setTimeout(() => recommendBand(est, band), 60);
+      } }
+  ]);
+}
+async function recommendBand(est, band) {
+  S.profile.vocab_size = est; S.profile.tested_at = now();
+  await DB.kv.set("profile", S.profile);
+  await saveSettings({ firstRunDone: true });
+  const cur = settings().band;
+  const b = el("div");
+  b.innerHTML = '<div class="infobox">估计词汇量约 <b>' + est + '</b> 词族（分频段抽样估算，仅供默认档位推荐）。<br>推荐默认档位：<b>' + BANDS[band].name + "</b>　当前：" + cur + "</div>" +
+    '<div class="tiny muted" style="margin-top:8px">这不是对你的分层：档位随时可在设置里切换，且只影响「释义语言、配图策略」这些默认参数，不参与任何评价或排名。</div>';
+  modal("自测结果", b, [
+    { t: "保持当前 " + cur },
+    { t: "切到 " + band + "（推荐）", p: true, fn: async () => { await switchBand(band); go("home"); } }
+  ]);
+}
+
+/* ---------- 自检：把论文里的硬约束变成可执行断言 ---------- */
+async function runSelfTest() {
+  const R = [];
+  const ok = (name, cond, detail) => R.push({ name, pass: !!cond, detail: detail || "" });
+  try {
+    FSRS.fuzz = false;
+    // FSRS 基本性质
+    ok("FSRS R(0)=1", Math.abs(FSRS.retrievability(0, 5) - 1) < 1e-6, "R(0)=" + FSRS.retrievability(0, 5).toFixed(4));
+    ok("FSRS 可提取性随时间单调下降", FSRS.retrievability(1, 5) > FSRS.retrievability(5, 5) && FSRS.retrievability(5, 5) > FSRS.retrievability(30, 5));
+    const st0 = FSRS.initState(3, FSRS.w);
+    const ivl = FSRS.intervalForRetention(st0.stability, 0.9, FSRS.w);
+    ok("FSRS S0 official anchor ≈1 天", ivl > 0.85 && ivl < 1.1, "S0=" + st0.stability.toFixed(3) + "，I(0.9)=" + ivl.toFixed(3) + " 天");
+    const s1 = FSRS.review({ stability: 5, difficulty: 5 }, 3, 5, 0.9, FSRS.w, 365);
+    const s2 = FSRS.review({ stability: 5, difficulty: 5 }, 1, 5, 0.9, FSRS.w, 365);
+    ok("Good 增稳 / Again 降稳", s1.stability > 5 && s2.stability < 5, "Good→" + s1.stability.toFixed(2) + "，Again→" + s2.stability.toFixed(2));
+    ok("Again 后不得拉长间隔", s2.intervalDays < s1.intervalDays);
+    FSRS.fuzz = settings().fsrsFuzz;
+    // 7.1 掌握度迁移表
+    const mk = (m) => ({ card_id: "t", sense_id: "s", word_id: "w", card_type: "meaning", state: "review", due_at: now(), stability: 3, difficulty: 5, mastery: m, reps: 1, successive: 3, lapses: 0, last_interval_days: 2, last_success_interval_days: 2, introduced_at: 1, mastery0: m });
+    const g = (m, jol, rt) => gradeCard(mk(m), jol, rt, {});
+    ok("想不起来 → M0", g(2, 0, 1000).mastery === 0);
+    ok("模糊：M2→M1", g(2, 1, 1000).mastery === 1);
+    ok("模糊：M1 保持", g(1, 1, 1000).mastery === 1);
+    ok("想起且 RT 达标 → 升一级（封顶 M3）", g(2, 2, 500).mastery === 3 && g(3, 2, 500).mastery === 3);
+    ok("想起但 RT 超标 → 不升级", g(1, 2, 99999).mastery === 1);
+    // 7.2 放行前不拉长间隔
+    const nw = { card_id: "n", sense_id: "s", word_id: "w", card_type: "meaning", state: "new", due_at: now(), stability: 0, difficulty: 0, mastery: 0, reps: 0, successive: 0, lapses: 0, last_interval_days: 0, introduced_at: 0 };
+    const r1 = gradeCard(JSON.parse(JSON.stringify(nw)), 2, 500, {});
+    ok("新词首次成功仍在密集队列（<1 天）", r1.ivlDays < 1 && r1.state === "learning", "间隔 " + fmtDur(r1.ivlDays * DAY));
+    const c2 = JSON.parse(JSON.stringify(nw)); c2.successive = (settings().releaseStreak - 1); c2.reps = 2; c2.stability = 2; c2.difficulty = 5; c2.introduced_at = 1; c2.last_interval_days = 0.1;
+    const r2 = gradeCard(c2, 2, 500, {});
+    ok("达成连续成功 → 放行到常规队列", r2.released === true && r2.state !== "learning");
+    // FR-M2-04 M1 间隔 60% 上限
+    const cm1 = mk(0); cm1.mastery = 0;
+    const rm1 = gradeCard(cm1, 1, 1000, {});
+    const base = FSRS.review({ stability: cm1.stability, difficulty: cm1.difficulty }, 3, 0, 0.9, FSRS.w, 365).intervalDays;
+    ok("M1 间隔 ≤ M2 基准 60%", rm1.mastery <= 1 && rm1.ivlDays <= base * settings().m1GrowthCap + 1e-6, "实际 " + rm1.ivlDays.toFixed(3) + " ≤ " + (base * settings().m1GrowthCap).toFixed(3));
+    // FR-M7-04 睡前不改到期
+    const sc = mk(2); sc.due_at = 12345;
+    const rs = gradeCard(sc, 2, 500, { mode: "sleep" });
+    ok("睡前巩固不改动到期时间（不加次日负担）", rs.card.due_at === 12345);
+    // 例句轮换：连续 10 次不重复
+    const sid = (S.cache.senses[0] || {}).sense_id;
+    if (sid && idx.sentencesOf(sid).length >= 2) {
+      let last = null, rep = 0;
+      for (let i = 0; i < 10; i++) { const p = pickSentence(sid, last); if (last && p.sentence && p.sentence.sentence_id === last) rep++; last = p.sentence ? p.sentence.sentence_id : null; }
+      ok("例句轮换：连续 10 次重复率 0", rep === 0, "重复 " + rep + " 次");
+    } else ok("例句轮换", true, "（无本地数据，跳过）");
+  } catch (e) { R.push({ name: "执行异常", pass: false, detail: e.message }); }
+  return R;
+}
+function showSelfTest(R) {
+  const pass = R.filter((r) => r.pass).length;
+  const body = el("div");
+  body.innerHTML = '<div class="' + (pass === R.length ? "infobox" : "warnbox") + '">' + pass + " / " + R.length + " 项通过</div>" +
+    R.map((r) => '<div class="row small" style="align-items:flex-start;margin-top:7px"><span class="badge ' + (r.pass ? "ok" : "warn") + '">' + (r.pass ? "PASS" : "FAIL") + "</span><div>" + esc(r.name) + (r.detail ? '<div class="tiny muted">' + esc(r.detail) + "</div>" : "") + "</div></div>").join("");
+  modal("算法自检", body, [{ t: "关闭", p: true }]);
+}
+
+/* ==========================================================================
+   12. 启动
+   ========================================================================== */
+function maybeNotify() {
+  const st = settings();
+  if (!st.sleep.enabled || isInDND() || st.sleepDoneKey === dayKey(now())) return;
+  if (!inSleepWindow()) return;
+  const eligible = new Set(logsToday("regular").map((l) => l.card_id)).size;
+  if (!eligible) return;
+  try {
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification("睡前巩固 · " + eligible + " 个词", { body: "只做一轮轻量提取，不加次日负担。" });
+      n.onclick = () => studySession("sleep");
+    }
+  } catch (e) { }
+}
+async function boot() {
+  await loadAll();
+  document.querySelectorAll("#nav button").forEach((b) => { b.onclick = () => go(b.dataset.v); });
+  updateTopChips();
+  go("home");
+  setInterval(() => { if (currentView === "home") { maybeNotify(); } updateTopChips(); }, 60000);
+  maybeNotify();
+  // 启动后异步检查界面更新（失败不影响使用；已缓存的新版本下次启动自动生效）
+  setTimeout(async () => {
+    if (settings().uiRemoteUpdate === false || !uiManifestUrl()) return;
+    const r = await checkUiUpdate();
+    if (r.status === "ready") showUpdateBanner(r);
+  }, 2500);
+  if (typeof Notification !== "undefined" && Notification.permission === "default" && settings().sleep.enabled) {
+    document.addEventListener("click", function once() {
+      document.removeEventListener("click", once);
+      try { Notification.requestPermission(); } catch (e) { }
+    });
+  }
+  if (S.cache.words.length && !S.profile.tested_at && !S.settings.firstRunDone) {
+    const b = el("div");
+    b.innerHTML = '<div class="infobox">词库里已有 ' + S.cache.words.length + ' 个词条。做一次词汇量自测可以推荐一个合适的默认档位（决定释义语言等默认参数），也可以直接在设置里选。<br><br>这不是分层，随时可改。</div>';
+    modal("先定个默认档位？", b, [
+      { t: "跳过" },
+      { t: "去设置里选", fn: () => go("settings") },
+      { t: "做自测（约 3 分钟）", p: true, fn: async () => { await saveSettings({ firstRunDone: true }); setTimeout(openVocabTest, 80); } }
+    ]);
+  }
+  window.RC = { FSRS, gradeCard, pickSentence, buildQueue, S, settings, runSelfTest, validateSense, delayedRetention, firstDaySuccess, computeHealth, go, refreshCache };
+}
+boot().catch((e) => { document.body.innerHTML = '<div style="padding:30px;font-family:sans-serif">初始化失败：' + esc(e.message) + "</div>"; });
+</script>
+</body>
+</html>
